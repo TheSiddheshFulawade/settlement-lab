@@ -11,7 +11,9 @@ public final class GeneralLedgerException extends RuntimeException {
         /** No answer in time. The entry may have been stored (lost ack). */
         TIMEOUT,
         /** Unavailable for a period; nothing stored. */
-        OUTAGE
+        OUTAGE,
+        /** Not called at all: our circuit breaker is open and fails fast. Nothing stored. */
+        CIRCUIT_OPEN
     }
 
     private final Kind kind;

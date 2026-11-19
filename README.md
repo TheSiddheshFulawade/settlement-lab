@@ -89,3 +89,13 @@ fixes formatting.
   runner wires the two.
 - **Chosen:** fault rates as whole percentages, outage as a time window with an injectable clock.
   **Why:** repeatable from a seed, and tests move through the window without waiting.
+
+### Retry and circuit breaker (L-07)
+
+- **Chosen:** Resilience4j `Retry` (3 attempts, exponential back-off from 50 ms, 50 % jitter,
+  transient errors only) inside a count-based `CircuitBreaker` (window 20, 50 %, open 2 s), as a
+  decorator `GeneralLedgerPort` in front of the outbox. **Alternative:** hand-written retry loops;
+  breaker inside retry. **Why:** a well-tested library for subtle state machines; breaker outside
+  so an open breaker fails fast and counts whole publishes. **Trade-off:** the first runtime
+  dependency (plus `slf4j-api`), kept behind one package by ArchUnit.
+- Starting values from SPEC.md; they will be tuned against the runner's numbers in L-08 and L-09.
