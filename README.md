@@ -4,8 +4,10 @@ A concurrency-safe settlement engine: move money between accounts concurrently w
 or losing any, under duplicates, downstream failures and overload. Then measure locking and threading
 choices. Write-up: https://siddheshfulawade.com/projects/settlement-lab
 
-v1 is a plain Java library and a command-line runner. [SPEC.md](SPEC.md) has the requirements
-(REQ-LAB-001 to 016), the design and the task list.
+v1 is a plain Java library and a command-line runner (module `engine`). v2, in progress, wraps it
+in a Spring Boot HTTP API (module `api`); the engine still never imports Spring.
+[SPEC.md](SPEC.md) has the requirements (REQ-LAB-001 to 016, REQ-API-001 to 007), the design and the
+task lists.
 
 ## Problem
 
@@ -56,7 +58,7 @@ submit(transfer)
 
 ## Results
 
-One run of `./mvnw -q compile exec:java` (defaults: 10,000 accounts, 100,000 transfers, 20 % of
+One run of `./mvnw -q -pl engine compile exec:java` (defaults: 10,000 accounts, 100,000 transfers, 20 % of
 transfers within 20 hot accounts, 2 % duplicate resends, seed 20261119, 8 workers, 64 closed-loop
 clients). Full output: [results/results.md](results/results.md) and
 [results/results.json](results/results.json).
@@ -117,11 +119,21 @@ Run the scenario matrix (writes `results/results.json` and `results/results.md`;
 invariant fails):
 
 ```bash
-./mvnw -q compile exec:java -Dexec.args="--transfers 100000"
+./mvnw -q -pl engine compile exec:java -Dexec.args="--transfers 100000"
 ```
 
 Options: `--accounts`, `--transfers`, `--hot-accounts`, `--hot-percent`, `--duplicate-percent`,
 `--seed`, `--out`.
+
+Start the HTTP API (v2, in progress; settings under `settlement.*`, see `api/src/main/resources/application.yml`):
+
+```bash
+./mvnw -q -pl api -am package -DskipTests
+```
+
+```bash
+java -jar api/target/settlement-lab-api-0.1.0-SNAPSHOT.jar --settlement.ledger=CAS --settlement.faults=FLAKY
+```
 
 ## What v2 adds
 
@@ -227,3 +239,31 @@ framework-free.
 - **Chosen:** JSON written by hand. **Why:** a dozen flat fields do not justify a JSON library.
 - **Found by measuring:** the first run exposed the outbox bottleneck and GL latency on worker
   threads (see L-06). Both fixed test-first before any number was committed.
+
+### Modules for v2 (V2-01)
+
+- **Chosen:** a Maven parent with two modules, `engine` (all of v1, unchanged) and `api` (Spring
+  Boot). **Alternative:** Spring Boot inside the one module, kept apart by ArchUnit only.
+  **Why:** the module boundary makes "the engine never imports Spring" impossible to break by
+  accident (it is not even on the engine's classpath), and each module keeps its own test stack:
+  the engine stays on JUnit 5.14 for jqwik, the api uses the JUnit 6 that Spring Boot 4 manages.
+- **Chosen:** import the Spring Boot BOM rather than inheriting `spring-boot-starter-parent`.
+  **Why:** our parent keeps the shared gates (enforcer, Spotless, JaCoCo); Boot only manages the
+  api's dependency versions.
+- **Chosen:** one plain `SettlementRuntime` that builds and closes the whole stack, exposed as a
+  single bean. **Alternative:** one bean per part and Spring's destroy order. **Why:** the stop
+  order (engine, then drain the outbox, then close it) is explicit, in one method, and tested
+  without Spring.
+
+### Transfer endpoint (V2-02)
+
+- **Chosen:** `POSTED` 201, `REJECTED_FUNDS` 422, `REJECTED_INVALID` 400 with the reason,
+  `QUEUE_FULL` 503 with `Retry-After: 1`; a repeat of the same id gets the original status.
+  **Alternative:** 200 for every processed transfer with the outcome in the body. **Why:** clients,
+  proxies and dashboards understand status codes; 503 + `Retry-After` is the standard "back off and
+  retry", and because ids are idempotent the retry is safe.
+- **Chosen:** shape errors (missing field, bad JSON) are RFC 9457 problem details and never reach
+  the engine; business rules (amount, accounts) stay in the engine. **Why:** one source of truth
+  for the rules, and the API layer stays thin.
+- **Chosen:** the controller returns a `CompletableFuture`. **Why:** no request thread waits on the
+  engine; with virtual threads on as well, waiting would be cheap either way.

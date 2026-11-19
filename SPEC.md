@@ -189,3 +189,64 @@ write-up: https://siddheshfulawade.com/projects/settlement-lab
 
 When L-08 has a real run, the portfolio's V1-10 write-up uses `results/results.md`. If it is not ready
 by Sunday 22 Nov 2026, the write-up ships with a "results coming" section and is updated in v1.1.
+
+---
+
+# Settlement Lab · v2 spec (HTTP API)
+
+Written 2026-11-19 at the start of v2, after v1 (sections 1 to 9) was complete. Same rules as
+section 0. The engine module stays exactly as framework-free as in v1.
+
+## 10. Scope (v2)
+
+In: a Spring Boot API module that wraps `SettlementEngine`: submit a transfer, read a balance, read
+metrics, and a server-sent event (SSE) stream of outcomes · configuration of ledger, thread mode,
+sizes and fault profile · graceful shutdown · API tests (MockMvc and over real HTTP) · README.
+
+Out (v3 or later): persistence and a database outbox, authentication, the UI, Docker. **Deploying to
+`api.siddheshfulawade.com` needs the user's explicit yes** (cloud resources and money, CLAUDE.md), so
+it is listed (V2-06) but not done without it.
+
+## 11. Requirements (EARS)
+
+- REQ-API-001 WHEN a client POSTs a transfer (`id`, `source`, `target`, `amount` in minor units), THE
+  API SHALL submit it to the engine and answer with its outcome: `POSTED` 201, `REJECTED_FUNDS` 422,
+  `REJECTED_INVALID` 400 with the reason, `QUEUE_FULL` 503 with `Retry-After`.
+- REQ-API-002 WHEN the same transfer id is POSTed again, THE API SHALL return the original outcome and
+  status, and the ledger SHALL change once (REQ-LAB-008 over HTTP).
+- REQ-API-003 IF a request body is malformed or misses a field, THEN THE API SHALL answer 400 with an
+  RFC 9457 problem detail and SHALL NOT submit anything.
+- REQ-API-004 THE API SHALL serve one account's balance (404 if unknown) and the engine, outbox and
+  circuit-breaker metrics.
+- REQ-API-005 THE API SHALL stream every processed transfer's outcome as SSE to subscribed clients;
+  a slow or gone client SHALL NOT slow down or break the engine.
+- REQ-API-006 WHEN the application stops, THE API SHALL stop accepting transfers, drain the engine
+  and the outbox within a deadline, and close them.
+- REQ-API-007 THE engine module SHALL NOT depend on Spring (ArchUnit in the engine module, and the
+  module boundary in Maven).
+
+## 12. Design
+
+Maven parent with two modules:
+
+| Module | Contents | Depends on |
+| ------ | -------- | ---------- |
+| `engine` | all of v1 (sections 4 to 6), unchanged, with its own tests and JUnit 5.14 | Resilience4j |
+| `api` | Spring Boot app: `TransferController`, `AccountController`, `MetricsController`, `EventStream`, `EngineConfiguration`, `SettlementProperties` | `engine`, Spring Boot (its BOM manages the api's test libraries) |
+
+- `EngineConfiguration` builds ledger → fake GL → `ResilientPublisher` → `OutboxPublisher` →
+  `SettlementEngine` from `settlement.*` properties and closes them in reverse on shutdown.
+- Controllers return `CompletableFuture` so a request thread never blocks on the engine; with virtual
+  threads enabled (`spring.threads.virtual.enabled`) blocking would be cheap anyway.
+- A balance read uses a new `Ledger.balance(AccountId)` (one account, not a full snapshot).
+- SSE: the engine listener hands each outcome to a bounded buffer per subscriber; a full buffer drops
+  that subscriber, never blocks a worker.
+
+## 13. Tasks (v2)
+
+- [x] V2-01 Multi-module build (parent, `engine`, `api`), app boots with the engine wired from properties, graceful shutdown, CI (REQ-API-006, 007)
+- [x] V2-02 `POST /api/v1/transfers` with outcome mapping, idempotent replay and problem details (REQ-API-001 to 003)
+- [ ] V2-03 `GET /api/v1/accounts/{id}` via `Ledger.balance`, `GET /api/v1/metrics` (REQ-API-004)
+- [ ] V2-04 `GET /api/v1/events` SSE stream with bounded per-subscriber buffers (REQ-API-005)
+- [ ] V2-05 README v2 section, how to run, an HTTP load check with invariants
+- [ ] V2-06 Deploy to `api.siddheshfulawade.com` (only with the user's explicit yes)

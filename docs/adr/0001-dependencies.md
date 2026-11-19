@@ -17,6 +17,19 @@ and an entry here for every dependency. Fewer dependencies means less to defend 
 | `io.github.resilience4j:resilience4j-retry`, `resilience4j-circuitbreaker` | 2.4.0 | Retry with exponential back-off and jitter, and a circuit breaker, around the general ledger (SPEC.md section 4.4). Used only in the `resilience` package (ArchUnit). Well-known, small, no reflection or framework. | L-07 |
 | `org.slf4j:slf4j-api` (transitive, from Resilience4j) | 1.7.30 | Logging facade Resilience4j needs. No logging provider is added, so SLF4J prints one "no provider" notice and logs nothing. | L-07 |
 
+### Runtime, `api` module only (v2)
+
+| Dependency | Version | Why | Added in |
+| ---------- | ------- | --- | -------- |
+| Spring Boot BOM (`spring-boot-dependencies`, imported) | 4.1.2 | Manages every api dependency version below, consistently. | V2-01 |
+| `spring-boot-starter-webmvc` | 4.1.2 (managed) | HTTP server and MVC controllers; with virtual threads, blocking a request thread is cheap. | V2-01 |
+| `spring-boot-starter-validation` | 4.1.2 (managed) | Bean Validation of request bodies (REQ-API-003). | V2-01 |
+| `spring-boot-maven-plugin` | 4.1.2 | Builds the runnable api jar. | V2-01 |
+
+Test, api only: `spring-boot-starter-test` and `spring-boot-starter-webmvc-test` (managed: JUnit
+Jupiter 6.0.3, AssertJ 3.27.7, Mockito), and Awaitility (managed, 4.3.0). The api module may use
+JUnit 6 because it has no jqwik; the engine module stays on JUnit 5.14.
+
 ### Test
 
 | Dependency | Version | Why |
