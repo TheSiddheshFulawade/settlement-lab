@@ -1,4 +1,4 @@
-package com.siddheshfulawade.settlementlab.domain;
+package com.siddheshfulawade.settlementlab.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -14,11 +14,11 @@ import java.util.function.IntConsumer;
  * them with a timeout. Threads are daemons: if the code under test deadlocks, the test fails on the
  * timeout and the stuck threads do not keep the JVM alive.
  */
-final class Concurrently {
+public final class Concurrently {
 
     private Concurrently() {}
 
-    static void run(int threads, Duration timeout, IntConsumer body) throws InterruptedException {
+    public static void run(int threads, Duration timeout, IntConsumer body) throws InterruptedException {
         CountDownLatch ready = new CountDownLatch(threads);
         CountDownLatch start = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(threads);

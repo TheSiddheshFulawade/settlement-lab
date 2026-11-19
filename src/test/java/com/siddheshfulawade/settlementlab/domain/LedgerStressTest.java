@@ -5,6 +5,7 @@ import static com.siddheshfulawade.settlementlab.domain.Fixtures.B;
 import static com.siddheshfulawade.settlementlab.domain.Fixtures.transfer;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.siddheshfulawade.settlementlab.testing.Concurrently;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Queue;

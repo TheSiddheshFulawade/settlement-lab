@@ -35,8 +35,7 @@ class ArchitectureTest {
             onlyDependsOn(DOMAIN, JAVA, DOMAIN).because("REQ-LAB-016: the domain imports only java.*");
 
     @ArchTest
-    static final ArchRule idempotencyImportsOnlyDomainAndJava =
-            onlyDependsOn(IDEMPOTENCY, JAVA, DOMAIN, IDEMPOTENCY).allowEmptyShould(true);
+    static final ArchRule idempotencyImportsOnlyDomainAndJava = onlyDependsOn(IDEMPOTENCY, JAVA, DOMAIN, IDEMPOTENCY);
 
     @ArchTest
     static final ArchRule pipelineImportsOnlyDomainIdempotencyAndJava =
@@ -60,7 +59,7 @@ class ArchitectureTest {
 
     @ArchTest
     static final ArchRule packagesAreFreeOfCycles =
-            slices().matching(BASE + ".(*)..").should().beFreeOfCycles().allowEmptyShould(true);
+            slices().matching(BASE + ".(*)..").should().beFreeOfCycles();
 
     // TODO-ME: add a rule `moneyIsNeverFloatingPoint` (REQ-LAB-001): no field declared in a class in
     //  DOMAIN may have the raw type double, float, Double or Float. Hint: start from

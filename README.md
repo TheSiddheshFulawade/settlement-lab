@@ -38,3 +38,16 @@ fixes formatting.
   look wrong. The cost is a short pause of all transfers per snapshot, acceptable for checks.
 - **Chosen:** invalid input is data (`InvalidReason`, `REJECTED_INVALID`), not an exception.
   **Why:** a bad request is normal traffic; the caller needs a reason, not a stack trace.
+
+### Idempotency (L-04)
+
+- **Chosen:** `ConcurrentHashMap<TransferId, CompletableFuture<Outcome>>` with `putIfAbsent`; the first
+  caller owns the id, duplicates share its future. **Alternative:** a `synchronized` set of seen ids;
+  `computeIfAbsent` running the work inside the map. **Why:** `putIfAbsent` is one atomic step and
+  never runs work under a map lock; the future lets a duplicate that arrives mid-flight wait for the
+  same answer instead of running again.
+- **Chosen:** duplicates get the original outcome (counted as `DUPLICATE` in metrics), not a bare
+  `DUPLICATE`. **Why:** a retrying client needs to know what happened to its transfer.
+- **Chosen:** unprocessed claims (`QUEUE_FULL`, a failure before applying) are released.
+  **Alternative:** remember every outcome. **Why:** otherwise a client that hit back-pressure could
+  never retry with the same id. **Trade-off:** no expiry in v1; memory grows with distinct ids.
