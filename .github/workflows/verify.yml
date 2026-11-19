@@ -12,6 +12,7 @@ jobs:
   verify:
     # Build on both supported JDKs: 21 proves the release-21 rule, 25 is the target runtime.
     strategy:
+      fail-fast: false # one JDK failing must not cancel (and hide) the other
       matrix:
         java: ['21', '25']
     runs-on: ubuntu-24.04
@@ -22,4 +23,14 @@ jobs:
           distribution: temurin
           java-version: ${{ matrix.java }}
           cache: maven
+      # Downloads only, retried: Maven Central intermittently fails or answers "absent" to hosted
+      # runners when there is no cache (seen on main run 2 and PR #4). Tests are never retried.
+      - name: Download Maven, dependencies and plugins
+        run: |
+          for attempt in 1 2 3; do
+            ./mvnw --batch-mode --quiet org.apache.maven.plugins:maven-dependency-plugin:3.11.0:go-offline && exit 0
+            echo "Download attempt $attempt failed; retrying in $((attempt * 15)) s"
+            sleep $((attempt * 15))
+          done
+          exit 1
       - run: ./mvnw --batch-mode verify
