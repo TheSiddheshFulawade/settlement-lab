@@ -1,0 +1,25 @@
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    # Build on both supported JDKs: 21 proves the release-21 rule, 25 is the target runtime.
+    strategy:
+      matrix:
+        java: ['21', '25']
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+      - run: ./mvnw --batch-mode verify
