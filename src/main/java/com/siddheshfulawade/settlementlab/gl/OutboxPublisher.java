@@ -5,7 +5,11 @@ import com.siddheshfulawade.settlementlab.domain.PostingPublisher;
 import java.time.Duration;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
@@ -15,13 +19,14 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * Publishes postings to the general ledger, and never loses one (REQ-LAB-011, 012).
  *
- * <p>Each posting is tried once, directly. If that fails, or if the outbox already holds entries
- * (so it queues behind them), the posting goes into the <b>outbox</b>. A single <b>relay</b> thread
+ * <p>{@code publish} returns at once: a bounded group of <b>sender</b> virtual threads (at most
+ * {@code senders} at a time) tries each posting directly, through the retrying, circuit-breaking
+ * port in front of the GL, so a slow or failing GL never holds up the engine's workers. Only if the
+ * direct try fails does the posting go into the <b>outbox</b>. A single <b>relay</b> thread
  * retries the outbox head, in order, every {@code retryInterval}, until it succeeds. Re-publishing is
  * safe because the general ledger is keyed by transfer id: a posting whose ack was lost is answered
  * {@code ALREADY_RECORDED}, not stored twice. So the effect is exactly once.
  *
- * <p>Retry with back-off and a circuit breaker around the direct call arrive in L-07.
  */
 public final class OutboxPublisher implements PostingPublisher, AutoCloseable {
 
@@ -30,8 +35,10 @@ public final class OutboxPublisher implements PostingPublisher, AutoCloseable {
     private final BlockingDeque<Posting> outbox = new LinkedBlockingDeque<>();
     private final Thread relay;
     private final CountDownLatch stop = new CountDownLatch(1);
+    private final ExecutorService senders = Executors.newVirtualThreadPerTaskExecutor();
+    private final Semaphore senderPermits;
 
-    // pending = postings in the outbox or in the relay's hand; drain waits for zero.
+    // pending = postings being sent, in the outbox, or in the relay's hand; drain waits for zero.
     private final ReentrantLock lock = new ReentrantLock();
     private final Condition empty = lock.newCondition();
     private long pending; // guarded by lock
@@ -39,20 +46,49 @@ public final class OutboxPublisher implements PostingPublisher, AutoCloseable {
     private final LongAdder published = new LongAdder();
     private final LongAdder failedAttempts = new LongAdder();
     private final AtomicLong peak = new AtomicLong();
+    private final AtomicLong waiting = new AtomicLong(); // postings in the outbox or the relay's hand
 
+    /** 16 concurrent senders. */
     public OutboxPublisher(GeneralLedgerPort port, Duration retryInterval) {
+        this(port, retryInterval, 16);
+    }
+
+    public OutboxPublisher(GeneralLedgerPort port, Duration retryInterval, int senders) {
         this.port = port;
         this.retryInterval = retryInterval;
+        this.senderPermits = new Semaphore(senders);
         this.relay = Thread.ofPlatform().name("gl-relay").daemon().start(this::relayLoop);
     }
 
     @Override
     public void publish(Posting posting) {
-        // outboxSize() counts the entry the relay may hold in its hand, so nothing jumps the queue.
-        if (outboxSize() == 0 && tryPublish(posting)) {
-            return;
-        }
         addPending();
+        try {
+            senders.execute(() -> send(posting));
+        } catch (RejectedExecutionException closed) {
+            toOutbox(posting); // after close: keep it, as close() promises
+        }
+    }
+
+    private void send(Posting posting) {
+        senderPermits.acquireUninterruptibly();
+        try {
+            // Always try directly first, even while older entries wait: GL entries are keyed by
+            // transfer id, so order does not matter for correctness, and funnelling everything through
+            // the single relay made it the bottleneck (measured in L-08: FLAKY never caught up). The
+            // circuit breaker in front of the GL is what stops us hammering it during an outage.
+            if (tryPublish(posting)) {
+                removePending();
+            } else {
+                toOutbox(posting);
+            }
+        } finally {
+            senderPermits.release();
+        }
+    }
+
+    private void toOutbox(Posting posting) {
+        peak.accumulateAndGet(waiting.incrementAndGet(), Math::max);
         outbox.addLast(posting);
     }
 
@@ -75,6 +111,7 @@ public final class OutboxPublisher implements PostingPublisher, AutoCloseable {
                     continue;
                 }
                 if (tryPublish(head)) {
+                    waiting.decrementAndGet();
                     removePending();
                 } else {
                     outbox.offerFirst(head); // keep its place: the outbox is retried in order
@@ -90,7 +127,6 @@ public final class OutboxPublisher implements PostingPublisher, AutoCloseable {
         lock.lock();
         try {
             pending++;
-            peak.accumulateAndGet(pending, Math::max);
         } finally {
             lock.unlock();
         }
@@ -130,6 +166,14 @@ public final class OutboxPublisher implements PostingPublisher, AutoCloseable {
     /** Stops the relay. Entries still in the outbox stay there (v1 keeps them in memory only). */
     @Override
     public void close() {
+        senders.shutdown();
+        try {
+            while (!senders.awaitTermination(1, TimeUnit.SECONDS)) {
+                // sends in flight finish (or fail into the outbox); none is abandoned half-way
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         stop.countDown();
         try {
             relay.join();
@@ -146,14 +190,9 @@ public final class OutboxPublisher implements PostingPublisher, AutoCloseable {
         return failedAttempts.sum();
     }
 
-    /** Postings waiting in the outbox now. */
+    /** Postings waiting in the outbox now (failed once, waiting for the relay). */
     public long outboxSize() {
-        lock.lock();
-        try {
-            return pending;
-        } finally {
-            lock.unlock();
-        }
+        return waiting.get();
     }
 
     /** The most postings the outbox ever held at once. */

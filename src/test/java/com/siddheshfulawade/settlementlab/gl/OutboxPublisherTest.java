@@ -9,7 +9,10 @@ import com.siddheshfulawade.settlementlab.domain.Posting;
 import com.siddheshfulawade.settlementlab.domain.TransferId;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,11 +26,12 @@ class OutboxPublisherTest {
     /** A general ledger that is down until the test brings it up, and records what it received. */
     private static final class SwitchablePort implements GeneralLedgerPort {
         final AtomicBoolean down = new AtomicBoolean();
+        final Set<Long> failing = ConcurrentHashMap.newKeySet();
         final List<Long> recorded = new CopyOnWriteArrayList<>();
 
         @Override
         public Ack publish(Posting posting) {
-            if (down.get()) {
+            if (down.get() || failing.contains(posting.sequence())) {
                 throw new GeneralLedgerException(GeneralLedgerException.Kind.OUTAGE, "down");
             }
             recorded.add(posting.sequence());
@@ -52,6 +56,7 @@ class OutboxPublisherTest {
     void publishesDirectly() {
         publisher.publish(posting(1));
 
+        assertThat(publisher.drain(WAIT)).isTrue();
         assertThat(port.recorded).containsExactly(1L);
         assertThat(publisher.outboxSize()).isZero();
         assertThat(publisher.outboxPeak()).isZero();
@@ -59,14 +64,13 @@ class OutboxPublisherTest {
     }
 
     @Test
-    @DisplayName(
-            "REQ-LAB-011 a failed publish goes to the outbox; the relay delivers it, in order, once the GL is back")
-    void outboxRelaysInOrder() {
+    @DisplayName("REQ-LAB-011 a failed publish goes to the outbox; the relay delivers every one once the GL is back")
+    void outboxRelaysEverything() {
         port.down.set(true);
         for (long i = 1; i <= 5; i++) {
             publisher.publish(posting(i));
         }
-        assertThat(publisher.outboxSize()).isEqualTo(5);
+        await().atMost(WAIT).until(() -> publisher.outboxSize() == 5);
         assertThat(publisher.drain(Duration.ofMillis(30)))
                 .as("cannot drain while the GL is down")
                 .isFalse();
@@ -74,22 +78,56 @@ class OutboxPublisherTest {
         port.down.set(false);
 
         assertThat(publisher.drain(WAIT)).isTrue();
-        assertThat(port.recorded).containsExactly(1L, 2L, 3L, 4L, 5L);
+        // Senders run concurrently, so arrival order is not fixed; the GL is keyed by id, so it need not be.
+        assertThat(port.recorded).containsExactlyInAnyOrder(1L, 2L, 3L, 4L, 5L);
         assertThat(publisher.outboxPeak()).isEqualTo(5);
         assertThat(publisher.failedAttempts()).isPositive();
     }
 
     @Test
-    @DisplayName("REQ-LAB-011 while the outbox holds entries, new postings queue behind them")
-    void newPostingsQueueBehindTheOutbox() {
-        port.down.set(true);
+    @DisplayName("REQ-LAB-011 a waiting outbox entry does not hold back new postings: they still go direct")
+    void newPostingsDoNotWaitBehindTheOutbox() {
+        port.failing.add(1L);
         publisher.publish(posting(1));
         await().atMost(WAIT).until(() -> publisher.failedAttempts() >= 2); // relay has retried at least once
-        port.down.set(false);
+
         publisher.publish(posting(2));
 
+        // Recorded while posting 1 is still waiting in the outbox.
+        await().atMost(WAIT).until(() -> port.recorded.contains(2L));
+        assertThat(port.recorded).containsExactly(2L);
+        assertThat(publisher.outboxSize()).isEqualTo(1);
+        port.failing.clear();
         assertThat(publisher.drain(WAIT)).isTrue();
-        assertThat(port.recorded).containsExactly(1L, 2L);
+        assertThat(port.recorded).containsExactly(2L, 1L);
+    }
+
+    @Test
+    @DisplayName("REQ-LAB-011 publish returns at once even when the general ledger is slow")
+    void publishDoesNotWaitForASlowGeneralLedger() throws Exception {
+        CountDownLatch gate = new CountDownLatch(1);
+        GeneralLedgerPort slow = posting -> {
+            try {
+                gate.await(); // a general ledger that does not answer until the test says so
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return GeneralLedgerPort.Ack.RECORDED;
+        };
+        try (var async = new OutboxPublisher(slow, RETRY)) {
+            long start = System.nanoTime();
+            for (long i = 1; i <= 100; i++) {
+                async.publish(posting(i));
+            }
+            assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(1));
+            assertThat(async.drain(Duration.ofMillis(20)))
+                    .as("sends are still in flight")
+                    .isFalse();
+
+            gate.countDown();
+            assertThat(async.drain(WAIT)).isTrue();
+            assertThat(async.published()).isEqualTo(100);
+        }
     }
 
     @Test

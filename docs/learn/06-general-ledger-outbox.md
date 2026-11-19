@@ -18,8 +18,13 @@ the ledger posting is the truth; the GL is eventually consistent.
   ack is lost; 1 ms latency); `DUPLICATE_ACKS` (30 % lost acks, so about a third are sent twice);
   `OUTAGE` (everything refused for a time window, with an injectable clock for tests). Draws come
   from one seeded generator, so a run is repeatable for the same order of calls.
-- **`OutboxPublisher`**: try once directly; on failure (or if older entries are waiting) append to
-  the **outbox**. One **relay** thread retries the head, in order, every `retryInterval`, putting it
+- **`OutboxPublisher`**: try once directly; on failure append to the **outbox**. (L-06 first made
+  new postings queue behind any waiting entry, to keep order. The L-08 runner showed that under
+  `FLAKY` the outbox was never empty, so everything went through the single serial relay and the GL
+  never caught up. Order is not needed for correctness, since the GL is keyed by transfer id, so now
+  every posting tries the direct path first. And `publish` itself returns at once: a bounded group
+  of sender virtual threads does the direct try, because a slow GL on the worker thread cut FLAKY
+  throughput to about 730 transfers/s.) One **relay** thread retries the head, in order, every `retryInterval`, putting it
   back at the front on failure. `drain` waits until nothing is pending; `outboxPeak` is reported.
 - **Exactly once = at-least-once delivery + an idempotent receiver.** The relay may send a posting
   twice (a lost ack looks like a failure); the GL's key makes the second send harmless.
@@ -39,9 +44,10 @@ instead of keeping it failed 4 tests.
 2. **Why does the caller's future complete before the GL publish?**
    The ledger posting is the source of truth. Tying the answer to a slow or failing downstream would
    make the engine only as available as the GL. The outbox guarantees the GL catches up.
-3. **Why do new postings queue behind the outbox instead of trying the GL directly?**
-   It keeps the order the relay delivers in, and it stops every worker hammering a GL that is known
-   to be failing. (L-07's circuit breaker formalises the second point.)
+3. **Why do new postings go direct even while the outbox holds entries?**
+   We first queued them behind, for order. Measurement showed it turned one slow relay into the
+   bottleneck for everything. Order does not matter to a GL keyed by transfer id, and the circuit
+   breaker already stops hammering a failing GL. A design choice reversed by data.
 4. **Why is `PostingPublisher` in `domain`, not in `gl` or `pipeline`?**
    Dependency inversion: the engine depends on an abstraction it owns, the adapter depends on the
    domain, and `pipeline` never imports `gl`. ArchUnit enforces it.

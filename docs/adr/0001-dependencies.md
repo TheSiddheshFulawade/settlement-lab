@@ -37,6 +37,8 @@ and an entry here for every dependency. Fewer dependencies means less to defend 
 | maven-enforcer-plugin | 3.7.0 | Java and Maven versions, dependency convergence, every plugin pinned. |
 | jacoco-maven-plugin | 0.8.16 | Line coverage gate of 85 %, `runner` excluded. |
 | spotless-maven-plugin + palantir-java-format | 3.11.0 + 2.103.0 | One format, checked on `verify`; `./mvnw spotless:apply` fixes it. |
+| maven-dependency-plugin (CI only, `go-offline`) | 3.11.0 | Pre-downloads everything in a retried CI step, because Maven Central intermittently fails hosted runners. Not in the pom. |
+| exec-maven-plugin | 3.7.0 | `./mvnw compile exec:java` runs the scenario matrix (L-08). Build-time only. |
 | clean, resources, jar, install, deploy, site plugins | 3.5.0, 3.5.0, 3.5.1, 3.2.0, 3.2.0, 3.22.0 | Pinned so the enforcer's `requirePluginVersions` passes and builds do not drift with Maven. |
 
 ## Consequences
