@@ -240,6 +240,21 @@ framework-free.
 - **Found by measuring:** the first run exposed the outbox bottleneck and GL latency on worker
   threads (see L-06). Both fixed test-first before any number was committed.
 
+### README and committed results (L-09)
+
+- **Chosen:** commit one real run (`results/results.md` and `.json`) with the machine, JDK and
+  workload named, and have the README quote it. **Alternative:** commit only the code and let
+  readers run it; or quote numbers in the README without the raw output. **Why:** every claim in
+  the write-up can be checked against the exact output it came from, and a later run (JDK 25, more
+  cores) has a fixed baseline to compare with.
+- **Chosen:** report only what one run supports: the large, consistent effect (locking beat CAS in
+  all six pairs) as a finding, the small ones (platform vs virtual throughput) as a direction,
+  and causes the run did not isolate as "most likely". **Alternative:** several runs with
+  confidence intervals before publishing. **Why:** honest within v1's scope; repeated runs are
+  listed as the next measurement rather than implied.
+- **Chosen:** the run is on JDK 21, not the JDK 25 target, and says so. **Why:** JDK 25 was not
+  available in that container, and `release 21` makes a 21 run valid; a JDK 25 run is still owed.
+
 ### Modules for v2 (V2-01)
 
 - **Chosen:** a Maven parent with two modules, `engine` (all of v1, unchanged) and `api` (Spring
