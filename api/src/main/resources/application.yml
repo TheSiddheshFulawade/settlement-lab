@@ -1,0 +1,14 @@
+# Let in-flight requests finish before the engine is closed (REQ-API-006).
+server:
+  shutdown: graceful
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  threads:
+    virtual:
+      enabled: true
+# Engine settings (all optional; defaults in SettlementProperties).
+settlement:
+  ledger: LOCKING
+  threads: VIRTUAL
+  faults: NONE
