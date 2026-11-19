@@ -33,3 +33,6 @@ secrets/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# jqwik test state
+.jqwik-database
