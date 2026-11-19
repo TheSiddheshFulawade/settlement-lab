@@ -49,8 +49,7 @@ class LedgerStressTest {
             }
         });
 
-        InvariantReport report = InvariantChecker.checkLedger(opening, ledger.snapshot(), ledger.postings(), accepted);
-        assertThat(report.allPassed()).as(report.toString()).isTrue();
+        assertAllInvariants(opening, ledger, accepted);
         assertThat(accepted).as("the workload posts a real share of transfers").hasSizeGreaterThan(10_000);
     }
 
@@ -60,7 +59,7 @@ class LedgerStressTest {
     void opposingTransfersDoNotDeadlock(LedgerKind kind) throws InterruptedException {
         Map<AccountId, Money> opening = Map.of(A, Money.of(1_000), B, Money.of(1_000));
         Ledger ledger = kind.create(opening);
-        LongAdder posted = new LongAdder();
+        Set<TransferId> accepted = ConcurrentHashMap.newKeySet();
 
         Concurrently.run(THREADS, TIMEOUT, thread -> {
             boolean forward = thread % 2 == 0;
@@ -69,13 +68,12 @@ class LedgerStressTest {
                         ? transfer("ab-" + thread + "-" + i, A, B, 1)
                         : transfer("ba-" + thread + "-" + i, B, A, 1);
                 if (ledger.apply(t) == Outcome.POSTED) {
-                    posted.increment();
+                    accepted.add(t.id());
                 }
             }
         });
 
-        assertThat(Fixtures.total(ledger.snapshot())).isEqualTo(2_000);
-        assertThat(ledger.postings()).hasSize(posted.intValue());
+        assertAllInvariants(opening, ledger, accepted);
     }
 
     @ParameterizedTest
@@ -84,16 +82,20 @@ class LedgerStressTest {
     void ringOfTransfersDoesNotDeadlock(LedgerKind kind) throws InterruptedException {
         Map<AccountId, Money> opening = Fixtures.uniformAccounts(THREADS, 1_000);
         Ledger ledger = kind.create(opening);
+        Set<TransferId> accepted = ConcurrentHashMap.newKeySet();
 
         Concurrently.run(THREADS, TIMEOUT, thread -> {
             AccountId source = AccountId.of(thread + 1);
             AccountId target = AccountId.of((thread + 1) % THREADS + 1);
             for (int i = 0; i < TRANSFERS_PER_THREAD; i++) {
-                ledger.apply(transfer("ring-" + thread + "-" + i, source, target, 1));
+                Transfer t = transfer("ring-" + thread + "-" + i, source, target, 1);
+                if (ledger.apply(t) == Outcome.POSTED) {
+                    accepted.add(t.id());
+                }
             }
         });
 
-        assertThat(Fixtures.total(ledger.snapshot())).isEqualTo(THREADS * 1_000L);
+        assertAllInvariants(opening, ledger, accepted);
     }
 
     @ParameterizedTest
@@ -137,5 +139,14 @@ class LedgerStressTest {
                 .as("snapshot totals that differ from %,d", openingTotal)
                 .isEmpty();
         assertThat(snapshots.sum()).isPositive();
+    }
+
+    /**
+     * The total alone is not enough: a lost update (a whole transfer silently dropped) still conserves
+     * the total. Replaying the postings over the opening balances is what catches it.
+     */
+    private static void assertAllInvariants(Map<AccountId, Money> opening, Ledger ledger, Set<TransferId> accepted) {
+        InvariantReport report = InvariantChecker.checkLedger(opening, ledger.snapshot(), ledger.postings(), accepted);
+        assertThat(report.allPassed()).as(report.toString()).isTrue();
     }
 }

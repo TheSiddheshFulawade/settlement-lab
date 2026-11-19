@@ -39,6 +39,15 @@ fixes formatting.
 - **Chosen:** invalid input is data (`InvalidReason`, `REJECTED_INVALID`), not an exception.
   **Why:** a bad request is normal traffic; the caller needs a reason, not a stack trace.
 
+### CAS ledger (L-03)
+
+- **Chosen:** whole balance table as an immutable `long[]` in an `AtomicReference`, updated with
+  `compareAndSet` and retried on conflict. **Alternative:** one `AtomicLong` per account; a
+  `StampedLock`. **Why:** per-account atomics cannot debit and credit two accounts atomically
+  without extra machinery; one swapped snapshot can, and gives free consistent snapshots. The
+  `long[]` (not a map) keeps the per-write copy as cheap as possible. **Trade-off:** copy on every
+  write and retry storms under contention, counted by `conflicts()` and measured in L-08.
+
 ### Idempotency (L-04)
 
 - **Chosen:** `ConcurrentHashMap<TransferId, CompletableFuture<Outcome>>` with `putIfAbsent`; the first
