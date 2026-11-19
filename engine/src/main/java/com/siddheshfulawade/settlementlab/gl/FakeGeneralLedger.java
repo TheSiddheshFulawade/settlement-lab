@@ -2,6 +2,7 @@ package com.siddheshfulawade.settlementlab.gl;
 
 import com.siddheshfulawade.settlementlab.domain.Posting;
 import com.siddheshfulawade.settlementlab.domain.TransferId;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -52,9 +53,7 @@ public final class FakeGeneralLedger implements GeneralLedgerPort {
     @Override
     public Ack publish(Posting posting) {
         calls.increment();
-        if (!profile.latency().isZero()) {
-            LockSupport.parkNanos(profile.latency().toNanos()); // simulated network time
-        }
+        waitAtLeast(profile.latency()); // simulated network time
         if (inOutage()) {
             outageRejections.increment();
             throw new GeneralLedgerException(GeneralLedgerException.Kind.OUTAGE, "general ledger unavailable");
@@ -70,6 +69,20 @@ public final class FakeGeneralLedger implements GeneralLedgerPort {
             throw new GeneralLedgerException(GeneralLedgerException.Kind.TIMEOUT, "ack lost after recording");
         }
         return ack;
+    }
+
+    /**
+     * Invariant: returns no sooner than {@code latency} after it was called. {@code parkNanos} may
+     * return early (spurious wake-up, and Windows timers are coarse), so one park is not enough: park
+     * again for whatever is left until a deadline on {@link System#nanoTime()} has passed. Real time on
+     * purpose, not {@code nanoClock}: a test clock that stands still must not make this wait forever.
+     * An interrupt makes each park return at once, so the wait still ends at the deadline.
+     */
+    private static void waitAtLeast(Duration latency) {
+        long deadline = System.nanoTime() + latency.toNanos();
+        for (long left = latency.toNanos(); left > 0; left = deadline - System.nanoTime()) {
+            LockSupport.parkNanos(left);
+        }
     }
 
     private Ack record(Posting posting) {

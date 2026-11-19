@@ -107,6 +107,21 @@ class FakeGeneralLedgerTest {
         assertThat(Duration.ofNanos(System.nanoTime() - start)).isGreaterThanOrEqualTo(Duration.ofMillis(20));
     }
 
+    @Test
+    @DisplayName("REQ-LAB-013 latency is a minimum on every call, even where timers wake early (Windows)")
+    void latencyIsAMinimumOnEveryCall() {
+        Duration latency = Duration.ofMillis(3);
+        var gl = new FakeGeneralLedger(FaultProfile.NONE.withLatency(latency), 1);
+
+        for (long i = 1; i <= 25; i++) {
+            long start = System.nanoTime();
+            gl.publish(posting(i));
+            assertThat(Duration.ofNanos(System.nanoTime() - start))
+                    .as("call %d", i)
+                    .isGreaterThanOrEqualTo(latency);
+        }
+    }
+
     private static void publishQuietly(FakeGeneralLedger gl, Posting posting) {
         try {
             gl.publish(posting);
