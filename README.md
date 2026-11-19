@@ -15,6 +15,15 @@ Status: in progress (v1). See [SPEC.md](SPEC.md) for requirements and the task l
 On Windows: `mvnw.cmd verify`. Needs JDK 21 or newer (25 recommended). `./mvnw spotless:apply`
 fixes formatting.
 
+Run the scenario matrix (writes `results/results.json` and `results/results.md`):
+
+```bash
+./mvnw -q compile exec:java -Dexec.args="--transfers 100000"
+```
+
+Options: `--accounts`, `--transfers`, `--hot-accounts`, `--hot-percent`, `--duplicate-percent`,
+`--seed`, `--out`.
+
 ## Decisions
 
 ### Build (L-01)
@@ -81,7 +90,9 @@ fixes formatting.
 - **Chosen:** `Ledger.applyWithResult` returns the recorded posting. **Alternative:** the engine
   builds a posting from the transfer. **Why:** the ledger stays the single source of postings, so
   the GL receives exactly what the ledger holds, sequence numbers included.
-- **Chosen:** outbox + single in-order relay, and a GL keyed by transfer id. **Alternative:**
+- **Chosen:** direct publish first, outbox + single in-order relay only for failures, and a GL keyed
+  by transfer id. (Queueing every posting behind a non-empty outbox was tried and reversed: the L-08
+  runner showed the single relay became the bottleneck under `FLAKY`.) **Alternative:**
   publish synchronously and fail the transfer when the GL fails. **Why:** the engine stays available
   when the GL is not; at-least-once delivery to an idempotent receiver gives an exactly-once effect.
   **Trade-off:** the v1 outbox is in memory, so a crash loses pending postings.
@@ -99,3 +110,14 @@ fixes formatting.
   so an open breaker fails fast and counts whole publishes. **Trade-off:** the first runtime
   dependency (plus `slf4j-api`), kept behind one package by ArchUnit.
 - Starting values from SPEC.md; they will be tuned against the runner's numbers in L-08 and L-09.
+
+### Runner and results (L-08)
+
+- **Chosen:** a seeded, index-addressed workload and closed-loop clients (64 virtual threads), one
+  warm-up per ledger, nearest-rank p50 and p99, and invariants checked in every cell.
+  **Alternative:** JMH (out of scope for v1, SPEC.md section 2); an open-loop load generator.
+  **Why:** the question is end-to-end behaviour of the whole engine under faults, not a micro
+  benchmark; closed loop measures capacity rather than queue overflow.
+- **Chosen:** JSON written by hand. **Why:** a dozen flat fields do not justify a JSON library.
+- **Found by measuring:** the first run exposed the outbox bottleneck and GL latency on worker
+  threads (see L-06). Both fixed test-first before any number was committed.
