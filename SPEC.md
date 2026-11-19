@@ -175,7 +175,7 @@ framework types.
 - [x] L-06 Fake GL with fault profiles, outbox and relay (REQ 011–013)
 - [x] L-07 `ResilientPublisher` (retry and circuit breaker), wired into the engine (REQ 011, 012)
 - [x] L-08 Runner, scenario matrix, results table and the JSON and Markdown output (REQ 015)
-- [ ] L-09 README, a final run on a named machine, results committed
+- [x] L-09 README, a final run on a named machine, results committed
 
 ## 8. README outline
 
