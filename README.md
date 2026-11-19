@@ -254,3 +254,16 @@ framework-free.
   single bean. **Alternative:** one bean per part and Spring's destroy order. **Why:** the stop
   order (engine, then drain the outbox, then close it) is explicit, in one method, and tested
   without Spring.
+
+### Transfer endpoint (V2-02)
+
+- **Chosen:** `POSTED` 201, `REJECTED_FUNDS` 422, `REJECTED_INVALID` 400 with the reason,
+  `QUEUE_FULL` 503 with `Retry-After: 1`; a repeat of the same id gets the original status.
+  **Alternative:** 200 for every processed transfer with the outcome in the body. **Why:** clients,
+  proxies and dashboards understand status codes; 503 + `Retry-After` is the standard "back off and
+  retry", and because ids are idempotent the retry is safe.
+- **Chosen:** shape errors (missing field, bad JSON) are RFC 9457 problem details and never reach
+  the engine; business rules (amount, accounts) stay in the engine. **Why:** one source of truth
+  for the rules, and the API layer stays thin.
+- **Chosen:** the controller returns a `CompletableFuture`. **Why:** no request thread waits on the
+  engine; with virtual threads on as well, waiting would be cheap either way.

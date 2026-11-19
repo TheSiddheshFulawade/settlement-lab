@@ -245,7 +245,7 @@ Maven parent with two modules:
 ## 13. Tasks (v2)
 
 - [x] V2-01 Multi-module build (parent, `engine`, `api`), app boots with the engine wired from properties, graceful shutdown, CI (REQ-API-006, 007)
-- [ ] V2-02 `POST /api/v1/transfers` with outcome mapping, idempotent replay and problem details (REQ-API-001 to 003)
+- [x] V2-02 `POST /api/v1/transfers` with outcome mapping, idempotent replay and problem details (REQ-API-001 to 003)
 - [ ] V2-03 `GET /api/v1/accounts/{id}` via `Ledger.balance`, `GET /api/v1/metrics` (REQ-API-004)
 - [ ] V2-04 `GET /api/v1/events` SSE stream with bounded per-subscriber buffers (REQ-API-005)
 - [ ] V2-05 README v2 section, how to run, an HTTP load check with invariants
