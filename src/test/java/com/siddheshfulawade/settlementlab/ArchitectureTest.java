@@ -45,9 +45,17 @@ class ArchitectureTest {
     static final ArchRule glImportsOnlyDomainAndJava = onlyDependsOn(GL, JAVA, DOMAIN, GL);
 
     @ArchTest
-    static final ArchRule resilienceImportsOnlyDomainGlAndResilience4j = onlyDependsOn(
-                    RESILIENCE, JAVA, DOMAIN, GL, RESILIENCE, RESILIENCE4J)
-            .allowEmptyShould(true);
+    static final ArchRule resilienceImportsOnlyDomainGlAndResilience4j =
+            onlyDependsOn(RESILIENCE, JAVA, DOMAIN, GL, RESILIENCE, RESILIENCE4J);
+
+    @ArchTest
+    static final ArchRule onlyResilienceUsesResilience4j = noClasses()
+            .that()
+            .resideOutsideOfPackage(RESILIENCE)
+            .should()
+            .dependOnClassesThat()
+            .resideInAPackage(RESILIENCE4J)
+            .because("the retry and breaker library stays behind one adapter");
 
     @ArchTest
     static final ArchRule noSpringAnywhere = noClasses()

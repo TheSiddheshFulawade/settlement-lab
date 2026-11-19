@@ -14,8 +14,8 @@ and an entry here for every dependency. Fewer dependencies means less to defend 
 
 | Dependency | Version | Why | Added in |
 | ---------- | ------- | --- | -------- |
-| none yet | | The domain, idempotency and (later) pipeline packages use only `java.*`. | L-01 |
-| `io.github.resilience4j:resilience4j-retry`, `resilience4j-circuitbreaker` | 2.4.0 (pin when added) | Retry and circuit breaker around the general ledger (SPEC.md section 4.4). Not added until L-07, so that nothing unused ships. | L-07 (planned) |
+| `io.github.resilience4j:resilience4j-retry`, `resilience4j-circuitbreaker` | 2.4.0 | Retry with exponential back-off and jitter, and a circuit breaker, around the general ledger (SPEC.md section 4.4). Used only in the `resilience` package (ArchUnit). Well-known, small, no reflection or framework. | L-07 |
+| `org.slf4j:slf4j-api` (transitive, from Resilience4j) | 1.7.30 | Logging facade Resilience4j needs. No logging provider is added, so SLF4J prints one "no provider" notice and logs nothing. | L-07 |
 
 ### Test
 
