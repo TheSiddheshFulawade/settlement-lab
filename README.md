@@ -267,3 +267,13 @@ framework-free.
   for the rules, and the API layer stays thin.
 - **Chosen:** the controller returns a `CompletableFuture`. **Why:** no request thread waits on the
   engine; with virtual threads on as well, waiting would be cheap either way.
+
+### Read endpoints (V2-03)
+
+- **Chosen:** a new `Ledger.balance(AccountId)` for `GET /api/v1/accounts/{id}`. **Alternative:**
+  take a `snapshot()` and pick one entry. **Why:** a locking snapshot pauses every transfer to copy
+  every account; one balance needs one lock (or, for CAS, one read). Proven by a property (agrees
+  with the snapshot) and a stress test (no negative or impossible value mid-run).
+- **Chosen:** `GET /api/v1/metrics` returns the runner's columns live (engine, outbox, breaker,
+  general ledger) plus the settings. **Alternative:** Spring Boot Actuator and Micrometer.
+  **Why:** no extra dependency for a handful of numbers; Actuator can come with deployment (V2-06).

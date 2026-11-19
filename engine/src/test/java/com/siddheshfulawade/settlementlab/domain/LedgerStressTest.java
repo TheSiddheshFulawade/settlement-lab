@@ -141,6 +141,45 @@ class LedgerStressTest {
         assertThat(snapshots.sum()).isPositive();
     }
 
+    @ParameterizedTest
+    @EnumSource(LedgerKind.class)
+    @DisplayName("REQ-API-004 single-account reads during the run never see a negative or torn balance")
+    void balanceReadsDuringTheRunAreSane(LedgerKind kind) throws InterruptedException {
+        Map<AccountId, Money> opening = Fixtures.uniformAccounts(4, 10_000);
+        Ledger ledger = kind.create(opening);
+        AtomicInteger workersDone = new AtomicInteger();
+        Queue<Long> bad = new ConcurrentLinkedQueue<>();
+
+        Concurrently.run(THREADS + 1, TIMEOUT, thread -> {
+            if (thread == THREADS) {
+                do {
+                    for (long id = 1; id <= 4; id++) {
+                        long units =
+                                ledger.balance(AccountId.of(id)).orElseThrow().minorUnits();
+                        if (units < 0 || units > 40_000) {
+                            bad.add(units);
+                        }
+                    }
+                } while (workersDone.get() < THREADS);
+                return;
+            }
+            try {
+                var random = new SplittableRandom(SEED + thread);
+                for (int i = 0; i < TRANSFERS_PER_THREAD; i++) {
+                    ledger.apply(transfer(
+                            "b-" + thread + "-" + i,
+                            AccountId.of(random.nextLong(1, 5)),
+                            AccountId.of(random.nextLong(1, 5)),
+                            random.nextLong(1, 3_000)));
+                }
+            } finally {
+                workersDone.incrementAndGet();
+            }
+        });
+
+        assertThat(bad).isEmpty();
+    }
+
     /**
      * The total alone is not enough: a lost update (a whole transfer silently dropped) still conserves
      * the total. Replaying the postings over the opening balances is what catches it.
