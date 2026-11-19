@@ -23,9 +23,16 @@
 `drain(timeout)` waits for zero. `close()` refuses new work, drains, stops the loops, answers anything
 still queued with `QUEUE_FULL` so no caller waits forever, then waits for running jobs to finish.
 
+**A race found in self-review:** `submit` checked `closed`, then offered. A submit that passed the
+check just before `close` could offer *after* close had emptied the queue and stopped the workers,
+leaving its caller waiting forever. Fix: submitters hold the shared side of a
+`ReentrantReadWriteLock` from the check until the offer is done; `close` takes the exclusive side to
+flip `closed`. A test with 4 submitters racing `close` (20 rounds, both modes) failed before the fix.
+
 **Failure handling:** if the ledger throws, the future completes exceptionally, `failed` is counted and
-the id is released (nothing was applied). A throwing listener is counted (`listenerErrors`), never
-allowed to kill a worker.
+the id is released (nothing was applied). A throwing listener or publisher is counted (`listenerErrors`,
+`publishErrors`), never allowed to kill a worker (before the fix, a throwing publisher killed the only
+platform worker and every later transfer hung).
 
 **Tests without sleeping:** `GatedLedger` holds every `apply` at a latch, so a test can fill the queue
 or measure the concurrency cap exactly, then open the gate. Awaitility waits for conditions. The

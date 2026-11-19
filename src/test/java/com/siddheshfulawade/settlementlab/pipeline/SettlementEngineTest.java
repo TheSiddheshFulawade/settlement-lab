@@ -11,6 +11,7 @@ import com.siddheshfulawade.settlementlab.domain.LockingLedger;
 import com.siddheshfulawade.settlementlab.domain.Money;
 import com.siddheshfulawade.settlementlab.domain.Outcome;
 import com.siddheshfulawade.settlementlab.domain.Posting;
+import com.siddheshfulawade.settlementlab.domain.PostingPublisher;
 import com.siddheshfulawade.settlementlab.domain.Transfer;
 import com.siddheshfulawade.settlementlab.domain.TransferId;
 import com.siddheshfulawade.settlementlab.testing.Concurrently;
@@ -248,6 +249,58 @@ class SettlementEngineTest {
         assertThat(engine.drain(WAIT)).isTrue();
 
         assertThat(published).containsExactlyElementsOf(engine.postings());
+    }
+
+    @ParameterizedTest
+    @EnumSource(ThreadMode.class)
+    @DisplayName("a publisher that throws is counted and does not kill the worker")
+    void failingPublisherDoesNotKillWorker(ThreadMode mode) throws Exception {
+        PostingPublisher broken = posting -> {
+            throw new IllegalStateException("publisher bug");
+        };
+        var engine = new SettlementEngine(ledger(), EngineConfig.of(mode, 1, 10), SettlementListener.NONE, broken);
+        engines.add(engine);
+
+        assertThat(outcome(engine.submit(transfer("t-1", A, B, 1)))).isEqualTo(Outcome.POSTED);
+        assertThat(outcome(engine.submit(transfer("t-2", A, B, 1)))).isEqualTo(Outcome.POSTED);
+        assertThat(engine.drain(WAIT)).isTrue();
+
+        assertThat(engine.metrics().publishErrors()).isEqualTo(2);
+    }
+
+    @ParameterizedTest
+    @EnumSource(ThreadMode.class)
+    @DisplayName("close racing with submitters leaves no caller waiting forever")
+    void closeRacingSubmittersAnswersEveryone(ThreadMode mode) throws Exception {
+        for (int round = 0; round < 20; round++) {
+            var engine = new SettlementEngine(
+                    ledger(),
+                    new EngineConfig(mode, 2, 64, Duration.ofMillis(1), Duration.ZERO),
+                    SettlementListener.NONE);
+            Queue<CompletionStage<Outcome>> results = new ConcurrentLinkedQueue<>();
+            int roundNumber = round;
+
+            Thread closer = Thread.ofPlatform().start(() -> {
+                await().atMost(WAIT).until(() -> results.size() > 50);
+                engine.close();
+            });
+            Concurrently.run(4, WAIT, thread -> {
+                for (int i = 0; ; i++) {
+                    try {
+                        results.add(engine.submit(transfer("r" + roundNumber + "-" + thread + "-" + i, A, B, 1)));
+                    } catch (IllegalStateException closed) {
+                        return;
+                    }
+                }
+            });
+            assertThat(closer.join(WAIT)).isTrue();
+
+            for (CompletionStage<Outcome> result : results) {
+                assertThat(result.toCompletableFuture())
+                        .as("every future completes after close")
+                        .isDone();
+            }
+        }
     }
 
     // TODO-ME: write `ledgerFailureIsReleasedAndCanBeRetried`: give the engine a Ledger whose apply

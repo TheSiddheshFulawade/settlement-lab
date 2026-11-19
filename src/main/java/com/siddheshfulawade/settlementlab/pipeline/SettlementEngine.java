@@ -19,6 +19,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * The one type callers (and v2's API) use. Flow per transfer:
@@ -49,6 +50,13 @@ public final class SettlementEngine implements AutoCloseable {
     private final InFlight inFlight = new InFlight();
     private final AtomicBoolean closed = new AtomicBoolean();
 
+    /**
+     * Shared by submitters from their closed check until their offer is done; taken exclusively by
+     * close to flip {@code closed}. So once close holds it, no submit is half-way, and no job can
+     * reach the queue after close emptied it.
+     */
+    private final ReentrantReadWriteLock closing = new ReentrantReadWriteLock();
+
     private final LongAdder submitted = new LongAdder();
     private final LongAdder posted = new LongAdder();
     private final LongAdder rejectedFunds = new LongAdder();
@@ -56,6 +64,7 @@ public final class SettlementEngine implements AutoCloseable {
     private final LongAdder queueFull = new LongAdder();
     private final LongAdder failed = new LongAdder();
     private final LongAdder listenerErrors = new LongAdder();
+    private final LongAdder publishErrors = new LongAdder();
 
     /** An engine that publishes postings nowhere: for tests and ledger-only benchmarks. */
     public SettlementEngine(Ledger ledger, EngineConfig config, SettlementListener listener) {
@@ -79,9 +88,18 @@ public final class SettlementEngine implements AutoCloseable {
      * @throws IllegalStateException after {@link #close()}
      */
     public CompletionStage<Outcome> submit(Transfer transfer) {
-        if (closed.get()) {
-            throw new IllegalStateException("engine is closed");
+        closing.readLock().lock();
+        try {
+            if (closed.get()) {
+                throw new IllegalStateException("engine is closed");
+            }
+            return accept(transfer);
+        } finally {
+            closing.readLock().unlock();
         }
+    }
+
+    private CompletionStage<Outcome> accept(Transfer transfer) {
         submitted.increment();
         IdempotencyStore.Claim claim = idempotency.claim(transfer.id());
         if (!claim.owner()) {
@@ -122,7 +140,7 @@ public final class SettlementEngine implements AutoCloseable {
             Outcome outcome = result.outcome();
             count(outcome);
             job.claim().outcome().complete(outcome);
-            result.posting().ifPresent(publisher::publish);
+            result.posting().ifPresent(this::publish);
             tellListener(job.transfer(), outcome);
         } finally {
             inFlight.decrement();
@@ -143,6 +161,14 @@ public final class SettlementEngine implements AutoCloseable {
             listener.onOutcome(transfer, outcome);
         } catch (RuntimeException e) {
             listenerErrors.increment(); // a listener bug must not kill a worker
+        }
+    }
+
+    private void publish(Posting posting) {
+        try {
+            publisher.publish(posting);
+        } catch (RuntimeException e) {
+            publishErrors.increment(); // a publisher bug must not kill a worker either
         }
     }
 
@@ -168,8 +194,13 @@ public final class SettlementEngine implements AutoCloseable {
      */
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) {
-            return;
+        closing.writeLock().lock();
+        try {
+            if (!closed.compareAndSet(false, true)) {
+                return;
+            }
+        } finally {
+            closing.writeLock().unlock();
         }
         drain(config.drainTimeout());
         pool.stopTaking();
@@ -206,6 +237,7 @@ public final class SettlementEngine implements AutoCloseable {
                 idempotency.duplicates(),
                 failed.sum(),
                 listenerErrors.sum(),
+                publishErrors.sum(),
                 intake.depth());
     }
 }

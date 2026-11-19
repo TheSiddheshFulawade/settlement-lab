@@ -13,4 +13,5 @@ public record EngineMetrics(
         long duplicates,
         long failed,
         long listenerErrors,
+        long publishErrors,
         int queueDepth) {}
