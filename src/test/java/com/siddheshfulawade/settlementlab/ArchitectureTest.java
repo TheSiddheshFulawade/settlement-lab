@@ -42,8 +42,7 @@ class ArchitectureTest {
             onlyDependsOn(PIPELINE, JAVA, DOMAIN, IDEMPOTENCY, PIPELINE);
 
     @ArchTest
-    static final ArchRule glImportsOnlyDomainAndJava =
-            onlyDependsOn(GL, JAVA, DOMAIN, GL).allowEmptyShould(true);
+    static final ArchRule glImportsOnlyDomainAndJava = onlyDependsOn(GL, JAVA, DOMAIN, GL);
 
     @ArchTest
     static final ArchRule resilienceImportsOnlyDomainGlAndResilience4j = onlyDependsOn(

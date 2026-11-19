@@ -28,7 +28,14 @@ class InvariantCheckerTest {
                 OPENING, balances, postings, Set.of(TransferId.of("t-1"), TransferId.of("t-2")));
 
         assertThat(report.allPassed()).isTrue();
-        assertThat(report.results()).extracting(InvariantResult::invariant).containsExactly(Invariant.values());
+        assertThat(report.results())
+                .extracting(InvariantResult::invariant)
+                .containsExactly(
+                        Invariant.TOTAL_CONSERVED,
+                        Invariant.NO_NEGATIVE_BALANCE,
+                        Invariant.POSTED_AT_MOST_ONCE,
+                        Invariant.POSTINGS_EXPLAIN_BALANCES,
+                        Invariant.POSTINGS_MATCH_ACCEPTED);
         assertThat(report.firstFailure()).isEmpty();
         assertThat(report.toString()).contains("PASS TOTAL_CONSERVED");
     }
@@ -96,5 +103,38 @@ class InvariantCheckerTest {
                 .extracting(InvariantResult::invariant)
                 .isEqualTo(Invariant.TOTAL_CONSERVED);
         assertThat(report.toString()).contains("FAIL NO_NEGATIVE_BALANCE: acc-1 has balance -1");
+    }
+
+    @Test
+    @DisplayName("REQ-LAB-012 REQ-LAB-014 the general ledger must hold exactly the ledger's postings")
+    void generalLedgerMatchesPostings() {
+        var p1 = posting(1, "t-1", A, B, 100);
+        var p2 = posting(2, "t-2", B, A, 50);
+
+        assertThat(InvariantChecker.glMatchesPostings(List.of(p1, p2), List.of(p2, p1))
+                        .passed())
+                .isTrue();
+        assertThat(InvariantChecker.glMatchesPostings(List.of(p1, p2), List.of(p1))
+                        .counterexample())
+                .contains("posting t-2 is missing from the general ledger");
+        assertThat(InvariantChecker.glMatchesPostings(List.of(p1), List.of(p1, p2))
+                        .counterexample())
+                .contains("general ledger entry t-2 has no ledger posting");
+        assertThat(InvariantChecker.glMatchesPostings(List.of(p1), List.of(posting(1, "t-1", A, B, 99)))
+                        .counterexample())
+                .contains("general ledger entry t-1 differs from the ledger posting");
+    }
+
+    @Test
+    @DisplayName("REQ-LAB-014 a run report has every invariant, the general ledger one last")
+    void runReportHasEveryInvariant() {
+        var postings = List.of(posting(1, "t-1", A, B, 100));
+        var balances = Map.of(A, Money.of(900), B, Money.of(600));
+
+        InvariantReport report =
+                InvariantChecker.checkRun(OPENING, balances, postings, Set.of(TransferId.of("t-1")), postings);
+
+        assertThat(report.allPassed()).isTrue();
+        assertThat(report.results()).extracting(InvariantResult::invariant).containsExactly(Invariant.values());
     }
 }

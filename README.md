@@ -75,3 +75,17 @@ fixes formatting.
   **Why:** no caller may wait forever, and a retry must be possible.
 - **Chosen:** the listener gets `(Transfer, Outcome)`. **Trade-off:** it does not carry the
   `Posting`; L-06 (publishing to the general ledger) will decide how the engine gets the posting.
+
+### General ledger, faults and outbox (L-06)
+
+- **Chosen:** `Ledger.applyWithResult` returns the recorded posting. **Alternative:** the engine
+  builds a posting from the transfer. **Why:** the ledger stays the single source of postings, so
+  the GL receives exactly what the ledger holds, sequence numbers included.
+- **Chosen:** outbox + single in-order relay, and a GL keyed by transfer id. **Alternative:**
+  publish synchronously and fail the transfer when the GL fails. **Why:** the engine stays available
+  when the GL is not; at-least-once delivery to an idempotent receiver gives an exactly-once effect.
+  **Trade-off:** the v1 outbox is in memory, so a crash loses pending postings.
+- **Chosen:** a `PostingPublisher` port in `domain`. **Why:** `pipeline` must not import `gl`; the
+  runner wires the two.
+- **Chosen:** fault rates as whole percentages, outage as a time window with an injectable clock.
+  **Why:** repeatable from a seed, and tests move through the window without waiting.

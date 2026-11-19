@@ -11,5 +11,7 @@ public enum Invariant {
     /** Opening balances plus every posting give exactly the current balances (REQ-LAB-002). */
     POSTINGS_EXPLAIN_BALANCES,
     /** Every accepted transfer has a posting, and every posting was accepted. */
-    POSTINGS_MATCH_ACCEPTED
+    POSTINGS_MATCH_ACCEPTED,
+    /** After drain, the general ledger holds every posting exactly once, unchanged (REQ-LAB-012). */
+    GL_MATCHES_POSTINGS
 }

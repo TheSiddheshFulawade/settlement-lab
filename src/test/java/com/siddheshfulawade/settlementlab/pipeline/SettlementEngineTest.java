@@ -10,6 +10,7 @@ import com.siddheshfulawade.settlementlab.domain.Ledger;
 import com.siddheshfulawade.settlementlab.domain.LockingLedger;
 import com.siddheshfulawade.settlementlab.domain.Money;
 import com.siddheshfulawade.settlementlab.domain.Outcome;
+import com.siddheshfulawade.settlementlab.domain.Posting;
 import com.siddheshfulawade.settlementlab.domain.Transfer;
 import com.siddheshfulawade.settlementlab.domain.TransferId;
 import com.siddheshfulawade.settlementlab.testing.Concurrently;
@@ -231,6 +232,22 @@ class SettlementEngineTest {
         await().atMost(WAIT).until(() -> heard.size() == 2);
         assertThat(heard).containsExactly("t-1=POSTED", "t-2=REJECTED_FUNDS");
         assertThat(engine.metrics().listenerErrors()).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @EnumSource(ThreadMode.class)
+    @DisplayName("REQ-LAB-011 every posting, and only postings, go to the publisher")
+    void publishesEveryPosting(ThreadMode mode) throws Exception {
+        Queue<Posting> published = new ConcurrentLinkedQueue<>();
+        var engine =
+                new SettlementEngine(ledger(), EngineConfig.of(mode, 2, 10), SettlementListener.NONE, published::add);
+        engines.add(engine);
+
+        assertThat(outcome(engine.submit(transfer("t-1", A, B, 1)))).isEqualTo(Outcome.POSTED);
+        assertThat(outcome(engine.submit(transfer("t-2", A, B, 5_000)))).isEqualTo(Outcome.REJECTED_FUNDS);
+        assertThat(engine.drain(WAIT)).isTrue();
+
+        assertThat(published).containsExactlyElementsOf(engine.postings());
     }
 
     // TODO-ME: write `ledgerFailureIsReleasedAndCanBeRetried`: give the engine a Ledger whose apply

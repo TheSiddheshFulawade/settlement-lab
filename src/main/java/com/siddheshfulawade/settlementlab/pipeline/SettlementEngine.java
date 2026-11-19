@@ -1,11 +1,13 @@
 package com.siddheshfulawade.settlementlab.pipeline;
 
 import com.siddheshfulawade.settlementlab.domain.AccountId;
+import com.siddheshfulawade.settlementlab.domain.ApplyResult;
 import com.siddheshfulawade.settlementlab.domain.InvalidReason;
 import com.siddheshfulawade.settlementlab.domain.Ledger;
 import com.siddheshfulawade.settlementlab.domain.Money;
 import com.siddheshfulawade.settlementlab.domain.Outcome;
 import com.siddheshfulawade.settlementlab.domain.Posting;
+import com.siddheshfulawade.settlementlab.domain.PostingPublisher;
 import com.siddheshfulawade.settlementlab.domain.Transfer;
 import com.siddheshfulawade.settlementlab.domain.TransferValidator;
 import com.siddheshfulawade.settlementlab.idempotency.IdempotencyStore;
@@ -26,8 +28,12 @@ import java.util.concurrent.atomic.LongAdder;
  *   <li>validate; an invalid transfer is answered now and never queued (REQ-LAB-004)
  *   <li>offer to the bounded queue for at most {@code offerTimeout}; if full, answer
  *       {@code QUEUE_FULL} and release the id so it can be retried (REQ-LAB-009)
- *   <li>a worker applies it to the ledger, completes the caller's future, then tells the listener
+ *   <li>a worker applies it to the ledger, completes the caller's future, hands the posting to the
+ *       {@link PostingPublisher} (general ledger, via an outbox), then tells the listener
  * </ol>
+ *
+ * The caller's answer does not wait for the general ledger: the ledger posting is the source of
+ * truth and the general ledger catches up (SPEC.md section 4.4).
  *
  * Free of framework types so v2 can wrap it (SPEC.md section 4.7).
  */
@@ -36,6 +42,7 @@ public final class SettlementEngine implements AutoCloseable {
     private final Ledger ledger;
     private final EngineConfig config;
     private final SettlementListener listener;
+    private final PostingPublisher publisher;
     private final IdempotencyStore idempotency = new IdempotencyStore();
     private final BoundedIntake intake;
     private final WorkerPool pool;
@@ -50,10 +57,17 @@ public final class SettlementEngine implements AutoCloseable {
     private final LongAdder failed = new LongAdder();
     private final LongAdder listenerErrors = new LongAdder();
 
+    /** An engine that publishes postings nowhere: for tests and ledger-only benchmarks. */
     public SettlementEngine(Ledger ledger, EngineConfig config, SettlementListener listener) {
+        this(ledger, config, listener, PostingPublisher.NONE);
+    }
+
+    public SettlementEngine(
+            Ledger ledger, EngineConfig config, SettlementListener listener, PostingPublisher publisher) {
         this.ledger = Objects.requireNonNull(ledger, "ledger");
         this.config = Objects.requireNonNull(config, "config");
         this.listener = Objects.requireNonNull(listener, "listener");
+        this.publisher = Objects.requireNonNull(publisher, "publisher");
         this.intake = new BoundedIntake(config.queueCapacity());
         this.pool = new WorkerPool(config.threadMode(), config.workers(), intake, this::process);
         pool.start();
@@ -95,9 +109,9 @@ public final class SettlementEngine implements AutoCloseable {
     /** Runs on a worker thread. */
     private void process(Job job) {
         try {
-            Outcome outcome;
+            ApplyResult result;
             try {
-                outcome = ledger.apply(job.transfer());
+                result = ledger.applyWithResult(job.transfer());
             } catch (RuntimeException e) {
                 // Nothing was applied (the ledger is atomic), so the id may be retried.
                 failed.increment();
@@ -105,8 +119,10 @@ public final class SettlementEngine implements AutoCloseable {
                 job.claim().outcome().completeExceptionally(e);
                 return;
             }
+            Outcome outcome = result.outcome();
             count(outcome);
             job.claim().outcome().complete(outcome);
+            result.posting().ifPresent(publisher::publish);
             tellListener(job.transfer(), outcome);
         } finally {
             inFlight.decrement();
