@@ -23,14 +23,16 @@ jobs:
           distribution: temurin
           java-version: ${{ matrix.java }}
           cache: maven
-      # Downloads only, retried: Maven Central intermittently fails or answers "absent" to hosted
-      # runners when there is no cache (seen on main run 2 and PR #4). Tests are never retried.
+      # Downloads only, retried, with Google's Central mirror as a fallback repository: Central
+      # intermittently refuses hosted runners when there is no cache (main run 2, PR #4, PR #6).
+      # Checksums are checked strictly (-C). Tests are never retried.
       - name: Download Maven, dependencies and plugins
         run: |
           for attempt in 1 2 3; do
-            ./mvnw --batch-mode --quiet org.apache.maven.plugins:maven-dependency-plugin:3.11.0:go-offline && exit 0
+            ./mvnw --batch-mode --quiet -C -s .github/maven-ci-settings.xml \
+              org.apache.maven.plugins:maven-dependency-plugin:3.11.0:go-offline && exit 0
             echo "Download attempt $attempt failed; retrying in $((attempt * 15)) s"
             sleep $((attempt * 15))
           done
           exit 1
-      - run: ./mvnw --batch-mode verify
+      - run: ./mvnw --batch-mode -C -s .github/maven-ci-settings.xml verify

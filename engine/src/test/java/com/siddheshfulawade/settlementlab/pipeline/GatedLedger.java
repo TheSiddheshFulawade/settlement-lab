@@ -8,6 +8,7 @@ import com.siddheshfulawade.settlementlab.domain.Posting;
 import com.siddheshfulawade.settlementlab.domain.Transfer;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -73,6 +74,11 @@ final class GatedLedger implements Ledger {
     @Override
     public boolean hasAccount(AccountId id) {
         return delegate.hasAccount(id);
+    }
+
+    @Override
+    public Optional<Money> balance(AccountId id) {
+        return delegate.balance(id);
     }
 
     @Override

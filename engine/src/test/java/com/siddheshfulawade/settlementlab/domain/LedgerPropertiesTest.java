@@ -134,6 +134,16 @@ class LedgerPropertiesTest {
         }
     }
 
+    @Property
+    @Label("REQ-API-004 balance(id) agrees with the snapshot for every account, and is empty for an unknown one")
+    void balanceAgreesWithSnapshot(@ForAll LedgerKind kind, @ForAll("scenarios") Scenario scenario) {
+        Ledger ledger = kind.create(scenario.opening());
+        scenario.transfers().forEach(ledger::apply);
+
+        ledger.snapshot().forEach((id, money) -> assertThat(ledger.balance(id)).contains(money));
+        assertThat(ledger.balance(AccountId.of(10_000))).isEmpty();
+    }
+
     /** The obvious single-threaded ledger: the reference the real ones must agree with. */
     private static Outcome modelApply(Map<AccountId, Long> model, Transfer t) {
         long amount = t.amount().minorUnits();

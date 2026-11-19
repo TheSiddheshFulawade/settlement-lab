@@ -68,6 +68,8 @@ class SettlementEngineTest {
         assertThat(outcome(engine.submit(transfer("t-1", A, B, 100)))).isEqualTo(Outcome.POSTED);
 
         assertThat(engine.snapshot()).containsEntry(A, Money.of(900)).containsEntry(B, Money.of(1_100));
+        assertThat(engine.balance(A)).contains(Money.of(900));
+        assertThat(engine.balance(AccountId.of(99))).isEmpty();
         assertThat(engine.metrics().posted()).isEqualTo(1);
         assertThat(engine.metrics().submitted()).isEqualTo(1);
     }

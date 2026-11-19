@@ -51,6 +51,7 @@ JUnit 6 because it has no jqwik; the engine module stays on JUnit 5.14.
 | jacoco-maven-plugin | 0.8.16 | Line coverage gate of 85 %, `runner` excluded. |
 | spotless-maven-plugin + palantir-java-format | 3.11.0 + 2.103.0 | One format, checked on `verify`; `./mvnw spotless:apply` fixes it. |
 | maven-dependency-plugin (CI only, `go-offline`) | 3.11.0 | Pre-downloads everything in a retried CI step, because Maven Central intermittently fails hosted runners. Not in the pom. |
+| `.github/maven-ci-settings.xml` (CI only) | - | Google's mirror of Maven Central as a fallback repository, with strict checksums (`-C`). Retries alone did not survive a runner refused by Central for minutes (PR #6). Local builds use Central only. |
 | exec-maven-plugin | 3.7.0 | `./mvnw compile exec:java` runs the scenario matrix (L-08). Build-time only. |
 | clean, resources, jar, install, deploy, site plugins | 3.5.0, 3.5.0, 3.5.1, 3.2.0, 3.2.0, 3.22.0 | Pinned so the enforcer's `requirePluginVersions` passes and builds do not drift with Maven. |
 

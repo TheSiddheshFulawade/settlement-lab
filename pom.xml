@@ -60,6 +60,8 @@
           <artifactId>maven-compiler-plugin</artifactId>
           <version>${compiler.plugin.version}</version>
           <configuration>
+            <!-- Keep parameter names so Spring can bind @PathVariable/@RequestParam by name. -->
+            <parameters>true</parameters>
             <compilerArgs>
               <arg>-Xlint:all</arg>
               <arg>-Werror</arg>

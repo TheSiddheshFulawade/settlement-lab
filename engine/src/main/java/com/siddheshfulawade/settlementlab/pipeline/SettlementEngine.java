@@ -219,6 +219,11 @@ public final class SettlementEngine implements AutoCloseable {
         return closed.get();
     }
 
+    /** One account's balance, or empty if unknown (REQ-API-004). */
+    public Optional<Money> balance(AccountId id) {
+        return ledger.balance(id);
+    }
+
     public Map<AccountId, Money> snapshot() {
         return ledger.snapshot();
     }

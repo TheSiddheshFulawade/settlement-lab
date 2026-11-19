@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -92,6 +93,21 @@ public final class LockingLedger implements Ledger {
     @Override
     public boolean hasAccount(AccountId id) {
         return accounts.containsKey(id);
+    }
+
+    /** Takes only this account's lock: the balance is read while no transfer can be half-way on it. */
+    @Override
+    public Optional<Money> balance(AccountId id) {
+        Account account = accounts.get(id);
+        if (account == null) {
+            return Optional.empty();
+        }
+        account.lock.lock();
+        try {
+            return Optional.of(Money.of(account.balance));
+        } finally {
+            account.lock.unlock();
+        }
     }
 
     /**

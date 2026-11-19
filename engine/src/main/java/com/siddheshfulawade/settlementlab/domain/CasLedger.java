@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
@@ -89,6 +90,15 @@ public final class CasLedger implements Ledger {
     @Override
     public boolean hasAccount(AccountId id) {
         return indexOf.containsKey(id);
+    }
+
+    /** One read of the current state: no lock, and never a half-applied transfer. */
+    @Override
+    public Optional<Money> balance(AccountId id) {
+        Integer index = indexOf.get(id);
+        return index == null
+                ? Optional.empty()
+                : Optional.of(Money.of(state.get().balances()[index]));
     }
 
     /** One read of the reference gives a whole published state: consistent with no lock at all. */
