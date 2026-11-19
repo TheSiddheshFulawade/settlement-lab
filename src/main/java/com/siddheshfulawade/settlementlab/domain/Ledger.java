@@ -9,9 +9,15 @@ public interface Ledger {
     /**
      * Applies a transfer atomically: debit and credit both happen or neither does (REQ-LAB-002).
      *
-     * @return {@link Outcome#POSTED}, {@link Outcome#REJECTED_FUNDS} or {@link Outcome#REJECTED_INVALID}
+     * @return the outcome ({@link Outcome#POSTED}, {@link Outcome#REJECTED_FUNDS} or
+     *     {@link Outcome#REJECTED_INVALID}) and, when posted, the posting that was recorded
      */
-    Outcome apply(Transfer transfer);
+    ApplyResult applyWithResult(Transfer transfer);
+
+    /** {@link #applyWithResult} when only the outcome matters. */
+    default Outcome apply(Transfer transfer) {
+        return applyWithResult(transfer).outcome();
+    }
 
     boolean hasAccount(AccountId id);
 

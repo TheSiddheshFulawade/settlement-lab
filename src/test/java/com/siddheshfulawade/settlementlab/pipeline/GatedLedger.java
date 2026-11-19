@@ -1,9 +1,9 @@
 package com.siddheshfulawade.settlementlab.pipeline;
 
 import com.siddheshfulawade.settlementlab.domain.AccountId;
+import com.siddheshfulawade.settlementlab.domain.ApplyResult;
 import com.siddheshfulawade.settlementlab.domain.Ledger;
 import com.siddheshfulawade.settlementlab.domain.Money;
-import com.siddheshfulawade.settlementlab.domain.Outcome;
 import com.siddheshfulawade.settlementlab.domain.Posting;
 import com.siddheshfulawade.settlementlab.domain.Transfer;
 import java.util.List;
@@ -53,7 +53,7 @@ final class GatedLedger implements Ledger {
     }
 
     @Override
-    public Outcome apply(Transfer transfer) {
+    public ApplyResult applyWithResult(Transfer transfer) {
         (Thread.currentThread().isVirtual() ? sawVirtualThread : sawPlatformThread).set(true);
         maxRunning.accumulateAndGet(running.incrementAndGet(), Math::max);
         entered.incrementAndGet();
@@ -61,7 +61,7 @@ final class GatedLedger implements Ledger {
             if (!gate.await(30, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("test never opened the gate");
             }
-            return delegate.apply(transfer);
+            return delegate.applyWithResult(transfer);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);

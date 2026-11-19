@@ -56,9 +56,9 @@ public final class CasLedger implements Ledger {
     }
 
     @Override
-    public Outcome apply(Transfer transfer) {
+    public ApplyResult applyWithResult(Transfer transfer) {
         if (TransferValidator.validate(transfer, indexOf::containsKey).isPresent()) {
-            return Outcome.REJECTED_INVALID;
+            return ApplyResult.rejected(Outcome.REJECTED_INVALID);
         }
         int source = indexOf.get(transfer.source());
         int target = indexOf.get(transfer.target());
@@ -68,7 +68,7 @@ public final class CasLedger implements Ledger {
             State current = state.get();
             if (current.balances()[source] < amount) {
                 // Decided on one whole published state, so it was true at that moment (REQ-LAB-003).
-                return Outcome.REJECTED_FUNDS;
+                return ApplyResult.rejected(Outcome.REJECTED_FUNDS);
             }
             long[] next = current.balances().clone();
             next[source] -= amount;
@@ -77,9 +77,10 @@ public final class CasLedger implements Ledger {
 
             // Succeeds only if nobody published since we read `current`; otherwise retry on fresh data.
             if (state.compareAndSet(current, updated)) {
-                postings.add(new Posting(
-                        updated.sequence(), transfer.id(), transfer.source(), transfer.target(), transfer.amount()));
-                return Outcome.POSTED;
+                Posting posting = new Posting(
+                        updated.sequence(), transfer.id(), transfer.source(), transfer.target(), transfer.amount());
+                postings.add(posting);
+                return ApplyResult.posted(posting);
             }
             conflicts.increment();
         }

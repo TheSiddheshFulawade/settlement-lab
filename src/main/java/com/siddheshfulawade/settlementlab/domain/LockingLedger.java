@@ -48,9 +48,9 @@ public final class LockingLedger implements Ledger {
     }
 
     @Override
-    public Outcome apply(Transfer transfer) {
+    public ApplyResult applyWithResult(Transfer transfer) {
         if (TransferValidator.validate(transfer, accounts::containsKey).isPresent()) {
-            return Outcome.REJECTED_INVALID;
+            return ApplyResult.rejected(Outcome.REJECTED_INVALID);
         }
         Account source = accounts.get(transfer.source());
         Account target = accounts.get(transfer.target());
@@ -68,17 +68,19 @@ public final class LockingLedger implements Ledger {
                 // Both locks held: no other thread can see or change these two balances, so the
                 // check and the two writes below are one atomic step (REQ-LAB-002).
                 if (source.balance < amount) {
-                    return Outcome.REJECTED_FUNDS; // nothing written yet, nothing to undo (REQ-LAB-003)
+                    // Nothing written yet, so nothing to undo (REQ-LAB-003).
+                    return ApplyResult.rejected(Outcome.REJECTED_FUNDS);
                 }
                 source.balance -= amount;
                 target.balance += amount;
-                postings.add(new Posting(
+                Posting posting = new Posting(
                         nextSequence.incrementAndGet(),
                         transfer.id(),
                         transfer.source(),
                         transfer.target(),
-                        transfer.amount()));
-                return Outcome.POSTED;
+                        transfer.amount());
+                postings.add(posting);
+                return ApplyResult.posted(posting);
             } finally {
                 second.lock.unlock();
             }
