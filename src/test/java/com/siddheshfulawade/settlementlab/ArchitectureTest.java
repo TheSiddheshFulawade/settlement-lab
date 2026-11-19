@@ -31,9 +31,8 @@ class ArchitectureTest {
     private static final String RESILIENCE4J = "io.github.resilience4j..";
 
     @ArchTest
-    static final ArchRule domainImportsOnlyJava = onlyDependsOn(DOMAIN, JAVA, DOMAIN)
-            .because("REQ-LAB-016: the domain imports only java.*")
-            .allowEmptyShould(true);
+    static final ArchRule domainImportsOnlyJava =
+            onlyDependsOn(DOMAIN, JAVA, DOMAIN).because("REQ-LAB-016: the domain imports only java.*");
 
     @ArchTest
     static final ArchRule idempotencyImportsOnlyDomainAndJava =
@@ -57,8 +56,7 @@ class ArchitectureTest {
             .should()
             .dependOnClassesThat()
             .resideInAPackage("org.springframework..")
-            .because("the engine stays framework-free so v2 can wrap it (SPEC.md section 4.7)")
-            .allowEmptyShould(true);
+            .because("the engine stays framework-free so v2 can wrap it (SPEC.md section 4.7)");
 
     @ArchTest
     static final ArchRule packagesAreFreeOfCycles =

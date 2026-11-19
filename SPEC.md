@@ -168,7 +168,7 @@ framework types.
 ## 7. Tasks (feature-sized, test-first)
 
 - [x] L-01 Build skeleton: wrapper, pom, enforcer, JaCoCo, Spotless, ArchUnit rules, deps ADR, CLAUDE.md for the repo
-- [ ] L-02 Domain types and `LockingLedger`, plus the invariant checker and property and stress suites (REQ 001–006, 014)
+- [x] L-02 Domain types and `LockingLedger`, plus the invariant checker and property and stress suites (REQ 001–006, 014)
 - [ ] L-03 `CasLedger` on the same suites (REQ 007)
 - [ ] L-04 `IdempotencyStore` with concurrent duplicate tests (REQ 008)
 - [ ] L-05 Intake, worker pool, `SettlementEngine` facade, both thread modes (REQ 004, 009, 010)
