@@ -60,3 +60,18 @@ fixes formatting.
 - **Chosen:** unprocessed claims (`QUEUE_FULL`, a failure before applying) are released.
   **Alternative:** remember every outcome. **Why:** otherwise a client that hit back-pressure could
   never retry with the same id. **Trade-off:** no expiry in v1; memory grows with distinct ids.
+
+### Engine, intake and workers (L-05)
+
+- **Chosen:** `ArrayBlockingQueue` with `offer(timeout)` answering `QUEUE_FULL`. **Alternative:** an
+  unbounded queue; a blocking `put`; rejecting at once with no wait. **Why:** bounded memory and
+  bounded caller wait (REQ-LAB-009); a short wait absorbs small bursts without rejecting them.
+- **Chosen:** `PLATFORM` = N platform threads; `VIRTUAL` = virtual thread per job behind a
+  `Semaphore(N)`. **Alternative:** an unbounded virtual-thread fan-out. **Why:** the same cap in both
+  modes keeps the benchmark fair; unlimited virtual threads would just move contention to the locks.
+- **Chosen:** validate and check duplicates in `submit`, before queueing. **Why:** bad and repeated
+  requests never use queue space or a worker.
+- **Chosen:** `close()` answers queued leftovers with `QUEUE_FULL` and releases their ids.
+  **Why:** no caller may wait forever, and a retry must be possible.
+- **Chosen:** the listener gets `(Transfer, Outcome)`. **Trade-off:** it does not carry the
+  `Posting`; L-06 (publishing to the general ledger) will decide how the engine gets the posting.

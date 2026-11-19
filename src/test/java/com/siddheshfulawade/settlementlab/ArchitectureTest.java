@@ -39,7 +39,7 @@ class ArchitectureTest {
 
     @ArchTest
     static final ArchRule pipelineImportsOnlyDomainIdempotencyAndJava =
-            onlyDependsOn(PIPELINE, JAVA, DOMAIN, IDEMPOTENCY, PIPELINE).allowEmptyShould(true);
+            onlyDependsOn(PIPELINE, JAVA, DOMAIN, IDEMPOTENCY, PIPELINE);
 
     @ArchTest
     static final ArchRule glImportsOnlyDomainAndJava =
