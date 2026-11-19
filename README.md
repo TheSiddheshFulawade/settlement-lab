@@ -277,3 +277,14 @@ framework-free.
 - **Chosen:** `GET /api/v1/metrics` returns the runner's columns live (engine, outbox, breaker,
   general ledger) plus the settings. **Alternative:** Spring Boot Actuator and Micrometer.
   **Why:** no extra dependency for a handful of numbers; Actuator can come with deployment (V2-06).
+
+### Event stream (V2-04)
+
+- **Chosen:** server-sent events (`text/event-stream`) through Spring's `SseEmitter`, fed by an
+  `EventHub` that is the engine's listener. **Alternative:** WebSockets; polling. **Why:** the flow
+  is one-way (server to client), SSE runs over plain HTTP, browsers reconnect by themselves, and
+  there is no extra protocol or dependency.
+- **Chosen:** a bounded buffer per subscriber, filled with a non-blocking `offer`, and one virtual
+  thread per subscriber writing to the connection; a full buffer drops that subscriber.
+  **Alternative:** write to clients from the engine's worker. **Why:** a slow or vanished client
+  must never cost a worker any time (REQ-API-005); the worst it can cost is its own buffer.
