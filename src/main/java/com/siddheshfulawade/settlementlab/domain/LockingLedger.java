@@ -40,29 +40,17 @@ public final class LockingLedger implements Ledger {
     private final AtomicLong nextSequence = new AtomicLong();
     private final Queue<Posting> postings = new ConcurrentLinkedQueue<>();
 
-    /**
-     * @throws IllegalArgumentException if an opening balance is negative
-     * @throws ArithmeticException if the opening total does not fit in a {@code long}. Because the
-     *     total fits, no single balance can overflow later: a balance is never more than the total.
-     */
+    /** See {@link OpeningBalances#checked} for the rules on opening balances. */
     public LockingLedger(Map<AccountId, Money> openingBalances) {
         Map<AccountId, Account> sorted = new TreeMap<>();
-        long total = 0;
-        for (Map.Entry<AccountId, Money> entry : new TreeMap<>(openingBalances).entrySet()) {
-            long balance = entry.getValue().minorUnits();
-            if (balance < 0) {
-                throw new IllegalArgumentException(entry.getKey() + " has a negative opening balance " + balance);
-            }
-            total = Math.addExact(total, balance);
-            sorted.put(entry.getKey(), new Account(balance));
-        }
+        OpeningBalances.checked(openingBalances).forEach((id, balance) -> sorted.put(id, new Account(balance)));
         this.accounts = Collections.unmodifiableMap(sorted);
     }
 
     @Override
-    public Outcome apply(Transfer transfer) {
+    public ApplyResult applyWithResult(Transfer transfer) {
         if (TransferValidator.validate(transfer, accounts::containsKey).isPresent()) {
-            return Outcome.REJECTED_INVALID;
+            return ApplyResult.rejected(Outcome.REJECTED_INVALID);
         }
         Account source = accounts.get(transfer.source());
         Account target = accounts.get(transfer.target());
@@ -80,17 +68,19 @@ public final class LockingLedger implements Ledger {
                 // Both locks held: no other thread can see or change these two balances, so the
                 // check and the two writes below are one atomic step (REQ-LAB-002).
                 if (source.balance < amount) {
-                    return Outcome.REJECTED_FUNDS; // nothing written yet, nothing to undo (REQ-LAB-003)
+                    // Nothing written yet, so nothing to undo (REQ-LAB-003).
+                    return ApplyResult.rejected(Outcome.REJECTED_FUNDS);
                 }
                 source.balance -= amount;
                 target.balance += amount;
-                postings.add(new Posting(
+                Posting posting = new Posting(
                         nextSequence.incrementAndGet(),
                         transfer.id(),
                         transfer.source(),
                         transfer.target(),
-                        transfer.amount()));
-                return Outcome.POSTED;
+                        transfer.amount());
+                postings.add(posting);
+                return ApplyResult.posted(posting);
             } finally {
                 second.lock.unlock();
             }

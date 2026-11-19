@@ -169,10 +169,10 @@ framework types.
 
 - [x] L-01 Build skeleton: wrapper, pom, enforcer, JaCoCo, Spotless, ArchUnit rules, deps ADR, CLAUDE.md for the repo
 - [x] L-02 Domain types and `LockingLedger`, plus the invariant checker and property and stress suites (REQ 001–006, 014)
-- [ ] L-03 `CasLedger` on the same suites (REQ 007)
+- [x] L-03 `CasLedger` on the same suites (REQ 007)
 - [x] L-04 `IdempotencyStore` with concurrent duplicate tests (REQ 008)
-- [ ] L-05 Intake, worker pool, `SettlementEngine` facade, both thread modes (REQ 004, 009, 010)
-- [ ] L-06 Fake GL with fault profiles, outbox and relay (REQ 011–013)
+- [x] L-05 Intake, worker pool, `SettlementEngine` facade, both thread modes (REQ 004, 009, 010)
+- [x] L-06 Fake GL with fault profiles, outbox and relay (REQ 011–013)
 - [ ] L-07 `ResilientPublisher` (retry and circuit breaker), wired into the engine (REQ 011, 012)
 - [ ] L-08 Runner, scenario matrix, results table and the JSON and Markdown output (REQ 015)
 - [ ] L-09 README, a final run on a named machine, results committed

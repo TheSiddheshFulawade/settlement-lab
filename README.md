@@ -39,6 +39,15 @@ fixes formatting.
 - **Chosen:** invalid input is data (`InvalidReason`, `REJECTED_INVALID`), not an exception.
   **Why:** a bad request is normal traffic; the caller needs a reason, not a stack trace.
 
+### CAS ledger (L-03)
+
+- **Chosen:** whole balance table as an immutable `long[]` in an `AtomicReference`, updated with
+  `compareAndSet` and retried on conflict. **Alternative:** one `AtomicLong` per account; a
+  `StampedLock`. **Why:** per-account atomics cannot debit and credit two accounts atomically
+  without extra machinery; one swapped snapshot can, and gives free consistent snapshots. The
+  `long[]` (not a map) keeps the per-write copy as cheap as possible. **Trade-off:** copy on every
+  write and retry storms under contention, counted by `conflicts()` and measured in L-08.
+
 ### Idempotency (L-04)
 
 - **Chosen:** `ConcurrentHashMap<TransferId, CompletableFuture<Outcome>>` with `putIfAbsent`; the first
@@ -51,3 +60,32 @@ fixes formatting.
 - **Chosen:** unprocessed claims (`QUEUE_FULL`, a failure before applying) are released.
   **Alternative:** remember every outcome. **Why:** otherwise a client that hit back-pressure could
   never retry with the same id. **Trade-off:** no expiry in v1; memory grows with distinct ids.
+
+### Engine, intake and workers (L-05)
+
+- **Chosen:** `ArrayBlockingQueue` with `offer(timeout)` answering `QUEUE_FULL`. **Alternative:** an
+  unbounded queue; a blocking `put`; rejecting at once with no wait. **Why:** bounded memory and
+  bounded caller wait (REQ-LAB-009); a short wait absorbs small bursts without rejecting them.
+- **Chosen:** `PLATFORM` = N platform threads; `VIRTUAL` = virtual thread per job behind a
+  `Semaphore(N)`. **Alternative:** an unbounded virtual-thread fan-out. **Why:** the same cap in both
+  modes keeps the benchmark fair; unlimited virtual threads would just move contention to the locks.
+- **Chosen:** validate and check duplicates in `submit`, before queueing. **Why:** bad and repeated
+  requests never use queue space or a worker.
+- **Chosen:** `close()` answers queued leftovers with `QUEUE_FULL` and releases their ids.
+  **Why:** no caller may wait forever, and a retry must be possible.
+- **Chosen:** the listener gets `(Transfer, Outcome)`. **Trade-off:** it does not carry the
+  `Posting`; L-06 (publishing to the general ledger) will decide how the engine gets the posting.
+
+### General ledger, faults and outbox (L-06)
+
+- **Chosen:** `Ledger.applyWithResult` returns the recorded posting. **Alternative:** the engine
+  builds a posting from the transfer. **Why:** the ledger stays the single source of postings, so
+  the GL receives exactly what the ledger holds, sequence numbers included.
+- **Chosen:** outbox + single in-order relay, and a GL keyed by transfer id. **Alternative:**
+  publish synchronously and fail the transfer when the GL fails. **Why:** the engine stays available
+  when the GL is not; at-least-once delivery to an idempotent receiver gives an exactly-once effect.
+  **Trade-off:** the v1 outbox is in memory, so a crash loses pending postings.
+- **Chosen:** a `PostingPublisher` port in `domain`. **Why:** `pipeline` must not import `gl`; the
+  runner wires the two.
+- **Chosen:** fault rates as whole percentages, outage as a time window with an injectable clock.
+  **Why:** repeatable from a seed, and tests move through the window without waiting.

@@ -117,6 +117,23 @@ class LedgerPropertiesTest {
         assertThat(ledger.snapshot()).isEqualTo(expectedBalances);
     }
 
+    @Property
+    @Label("REQ-LAB-011 a POSTED result carries the posting the ledger recorded; a rejection carries none")
+    void resultCarriesThePosting(@ForAll LedgerKind kind, @ForAll("scenarios") Scenario scenario) {
+        Ledger ledger = kind.create(scenario.opening());
+
+        for (Transfer t : scenario.transfers()) {
+            ApplyResult result = ledger.applyWithResult(t);
+            if (result.outcome() == Outcome.POSTED) {
+                List<Posting> postings = ledger.postings();
+                assertThat(result.posting()).contains(postings.get(postings.size() - 1));
+                assertThat(result.posting().get().transferId()).isEqualTo(t.id());
+            } else {
+                assertThat(result.posting()).isEmpty();
+            }
+        }
+    }
+
     /** The obvious single-threaded ledger: the reference the real ones must agree with. */
     private static Outcome modelApply(Map<AccountId, Long> model, Transfer t) {
         long amount = t.amount().minorUnits();

@@ -1,5 +1,6 @@
 package com.siddheshfulawade.settlementlab.domain;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -33,6 +34,19 @@ public final class InvariantChecker {
                 postedAtMostOnce(postings),
                 postingsExplainBalances(opening, balances, postings),
                 postingsMatchAccepted(postings, accepted)));
+    }
+
+    /** Every ledger invariant, then {@link Invariant#GL_MATCHES_POSTINGS}: the whole run. */
+    public static InvariantReport checkRun(
+            Map<AccountId, Money> opening,
+            Map<AccountId, Money> balances,
+            List<Posting> postings,
+            Collection<TransferId> accepted,
+            Collection<Posting> glEntries) {
+        List<InvariantResult> results = new ArrayList<>(
+                checkLedger(opening, balances, postings, accepted).results());
+        results.add(glMatchesPostings(postings, glEntries));
+        return new InvariantReport(results);
     }
 
     public static InvariantResult totalConserved(Map<AccountId, Money> opening, Map<AccountId, Money> balances) {
@@ -113,6 +127,38 @@ public final class InvariantChecker {
             }
         }
         return InvariantResult.pass(Invariant.POSTINGS_MATCH_ACCEPTED);
+    }
+
+    /**
+     * The general ledger is eventually consistent with the ledger; after drain both must hold the
+     * same postings. Compared by transfer id (the general ledger's key), then field by field.
+     */
+    public static InvariantResult glMatchesPostings(List<Posting> postings, Collection<Posting> glEntries) {
+        Map<String, Posting> ledger = new TreeMap<>();
+        postings.forEach(p -> ledger.put(p.transferId().value(), p));
+        Map<String, Posting> gl = new TreeMap<>();
+        glEntries.forEach(p -> gl.put(p.transferId().value(), p));
+
+        for (Map.Entry<String, Posting> entry : ledger.entrySet()) {
+            Posting inGl = gl.get(entry.getKey());
+            if (inGl == null) {
+                return InvariantResult.fail(
+                        Invariant.GL_MATCHES_POSTINGS,
+                        "posting " + entry.getKey() + " is missing from the general ledger");
+            }
+            if (!inGl.equals(entry.getValue())) {
+                return InvariantResult.fail(
+                        Invariant.GL_MATCHES_POSTINGS,
+                        "general ledger entry " + entry.getKey() + " differs from the ledger posting");
+            }
+        }
+        for (String id : gl.keySet()) {
+            if (!ledger.containsKey(id)) {
+                return InvariantResult.fail(
+                        Invariant.GL_MATCHES_POSTINGS, "general ledger entry " + id + " has no ledger posting");
+            }
+        }
+        return InvariantResult.pass(Invariant.GL_MATCHES_POSTINGS);
     }
 
     private static long total(Map<AccountId, Money> balances) {

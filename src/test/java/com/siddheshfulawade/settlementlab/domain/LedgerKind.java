@@ -8,7 +8,8 @@ import java.util.function.Function;
  * constant, so a new ledger (CasLedger in L-03) gets the same proofs by adding one line here.
  */
 enum LedgerKind {
-    LOCKING(LockingLedger::new);
+    LOCKING(LockingLedger::new),
+    CAS(CasLedger::new);
 
     private final Function<Map<AccountId, Money>, Ledger> factory;
 
