@@ -49,6 +49,14 @@ L-09 README and a committed results run. Tick each task in SPEC.md when done.
 `./mvnw verify` (Windows: `mvnw.cmd verify`) is the single gate: compile, tests, coverage, format,
 architecture rules. Run the results with the runner described in SPEC.md §4.6.
 
+## Claude setup (kept small on purpose)
+
+- Hooks: `session-start` (prints SPEC.md task status and the latest handoff into every new session),
+  `guard-bash` and `protect-secrets` (safety). Tests: `node --test .claude/hooks/*.test.mjs`.
+- Skills: `java-standards` and `testing-playbook` (load before Java or test work), `/ship`,
+  `/handoff`, `/quiz [module]`.
+- Agent: `security-auditor`, before any deploy and after changes to `api`, pom files or CI.
+
 ## Handoffs
 
 End each session with `docs/sessions/YYYY-MM-DD-NN-topic.md` (at most 20 lines): done, state, next,
