@@ -61,7 +61,11 @@ const neverRules = [
   [/\bgh\s+auth\s+token\b|\bgh\s+auth\s+status\b.*(--show-token|\s-t\b)/i, 'printing the GitHub token is not allowed'],
   [/\bgit\s+credential(-\w+)?\s+(fill|get)\b/i, 'reading stored git credentials is not allowed'],
   [/\bcmdkey\s+\/list\b|\bvaultcmd\b|\bmimikatz\b|\bsekurlsa\b|\bprocdump\b.*\blsass\b|\bcomsvcs(\.dll)?\b.*\bMiniDump\b|\breg(\.exe)?\s+save\s+hklm\\(sam|system|security)\b/i, 'dumping system credentials is not allowed'],
-  [/\$(\{|env:)?[A-Za-z_]*(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY)[A-Za-z_]*\}?|%[A-Za-z_]*(TOKEN|SECRET|PASSWORD|API_?KEY)[A-Za-z_]*%/i, 'expanding a secret environment variable is not allowed'],
+  // POSIX: case-sensitive, because environment secrets are upper case by convention. Lower-case names such as
+  // a JS template placeholder `${tokens}` or a shell loop variable are not env secrets (false positive, day 4).
+  [/\$\{?[A-Z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY)[A-Z0-9_]*\}?/, 'expanding a secret environment variable is not allowed'],
+  // Windows: environment variable names are case-insensitive, so any case is blocked.
+  [/\$env:[A-Za-z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY)|%[A-Za-z0-9_]*(TOKEN|SECRET|PASSWORD|API_?KEY)[A-Za-z0-9_]*%/i, 'expanding a secret environment variable is not allowed'],
   [CRED_PATH, 'credential files and private keys must not be read, copied or changed'],
   // Malware techniques
   [/\b(powershell|pwsh)(\.exe)?\b.*\s-(e|ec|en|enc|enco|encodedcommand)\s+[A-Za-z0-9+\/=]{16,}/i, 'encoded PowerShell commands are not allowed'],
