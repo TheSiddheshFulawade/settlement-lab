@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 324" width="940" height="324" role="img" aria-labelledby="t d">
+  <title id="t">Circuit breaker around the general ledger</title>
+  <desc id="d">The breaker is closed while calls succeed. When half of the last 20 calls fail it opens and fails fast for 2 seconds. Then it lets a trial call through: success closes it, failure opens it again. Postings that fail wait in the outbox and are resent.</desc>
+  <style>
+    .bg{fill:#0b1220}
+    .h{font:600 15px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#e6edf6}
+    .s{font:12.5px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#c3cfdf}
+    .k{font:700 14px ui-monospace,Consolas,"SFMono-Regular",monospace;fill:#0b1220}
+    .ln{stroke:#3b4d6b;stroke-width:2;fill:none}
+    .ring{fill:none;stroke-width:6;opacity:.15;animation:glow 9s infinite}
+    .r2{animation-delay:3s}.r3{animation-delay:6s}
+    @keyframes glow{0%,33%{opacity:1}34%,100%{opacity:.15}}
+    @media (prefers-reduced-motion:reduce){.ring{animation:none;opacity:.6}}
+  </style>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#3b4d6b"/></marker></defs>
+  <rect class="bg" width="940" height="324" rx="14"/>
+  <text class="h" x="24" y="34">When the general ledger is down: fail fast, keep the posting, resend later</text>
+
+  <circle class="ring" cx="150" cy="140" r="58" stroke="#4ade80"/>
+  <circle cx="150" cy="140" r="46" fill="#4ade80"/><text class="k" x="150" y="145" text-anchor="middle">CLOSED</text>
+  <circle class="ring r2" cx="470" cy="140" r="58" stroke="#f87171"/>
+  <circle cx="470" cy="140" r="46" fill="#f87171"/><text class="k" x="470" y="145" text-anchor="middle">OPEN</text>
+  <circle class="ring r3" cx="790" cy="140" r="58" stroke="#f59e0b"/>
+  <circle cx="790" cy="140" r="46" fill="#f59e0b"/><text class="k" x="790" y="145" text-anchor="middle">HALF-OPEN</text>
+
+  <path class="ln" d="M205 122Q310 85 415 122" marker-end="url(#a)"/>
+  <text class="s" x="310" y="84" text-anchor="middle">≥ 50 % of last 20 calls fail</text>
+  <path class="ln" d="M525 122Q630 85 735 122" marker-end="url(#a)"/>
+  <text class="s" x="630" y="84" text-anchor="middle">wait 2 s</text>
+  <path class="ln" d="M735 160Q630 195 525 160" marker-end="url(#a)"/>
+  <text class="s" x="630" y="207" text-anchor="middle">trial call fails</text>
+  <path class="ln" d="M770 192Q470 318 170 194" marker-end="url(#a)"/>
+  <text class="s" x="470" y="262" text-anchor="middle">trial call succeeds</text>
+
+  <text class="s" x="150" y="222" text-anchor="middle">calls go through;</text>
+  <text class="s" x="150" y="238" text-anchor="middle">retry 3× with jitter</text>
+  <text class="s" x="24" y="296">Open = no calls for 2 s, so a sick GL is not hammered. The posting waits in the outbox; the GL is keyed by transfer id,</text>
+  <text class="s" x="24" y="313">so a resend is harmless. At-least-once delivery + idempotent receiver = exactly-once effect.</text>
+</svg>

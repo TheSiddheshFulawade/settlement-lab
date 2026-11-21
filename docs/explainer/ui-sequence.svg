@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 400" width="940" height="400" role="img" aria-labelledby="t d">
+  <title id="t">What happens when a visitor clicks Run</title>
+  <desc id="d">The Lab page posts the chosen settings to the API, opens a server-sent event stream, the engine processes the transfers and the API streams metrics four times a second, then a final invariant report.</desc>
+  <style>
+    .bg{fill:#0b1220}.lane{fill:#121c2e;stroke:#2a3a55;stroke-width:1.2}
+    .h{font:600 13px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#e6edf6}
+    .s{font:12px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#c3cfdf}
+    .k{font:600 11.5px ui-monospace,Consolas,monospace;fill:#2dd4bf}
+    .life{stroke:#2a3a55;stroke-width:1.5;stroke-dasharray:4 4}
+    .ln{stroke:#5b6f90;stroke-width:1.6;fill:none}.back{stroke-dasharray:5 4}
+  </style>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#5b6f90"/></marker></defs>
+  <rect class="bg" width="940" height="400" rx="14"/>
+  <rect class="lane" x="30" y="16" width="170" height="40" rx="8"/><text class="h" x="115" y="41" text-anchor="middle">Visitor</text>
+  <rect class="lane" x="260" y="16" width="170" height="40" rx="8"/><text class="h" x="345" y="41" text-anchor="middle">Lab page (Angular)</text>
+  <rect class="lane" x="490" y="16" width="170" height="40" rx="8"/><text class="h" x="575" y="41" text-anchor="middle">API (Spring Boot)</text>
+  <rect class="lane" x="720" y="16" width="190" height="40" rx="8"/><text class="h" x="815" y="41" text-anchor="middle">Engine</text>
+  <path class="life" d="M115 56V390M345 56V390M575 56V390M815 56V390"/>
+
+  <path class="ln" d="M115 84H343" marker-end="url(#a)"/><text class="s" x="125" y="78">1 · picks settings, clicks Run</text>
+  <path class="ln" d="M345 120H573" marker-end="url(#a)"/><text class="k" x="355" y="114">2 · POST /api/v1/runs</text>
+  <text class="s" x="585" y="116">checks limits</text><text class="s" x="585" y="132">(rate, size, 2 at once)</text>
+  <path class="ln back" d="M575 150H347" marker-end="url(#a)"/><text class="k" x="400" y="144">202 · runId</text>
+  <path class="ln" d="M345 182H573" marker-end="url(#a)"/><text class="k" x="355" y="176">3 · GET /runs/{id}/events (SSE)</text>
+  <path class="ln" d="M575 212H813" marker-end="url(#a)"/><text class="s" x="590" y="206">4 · start: 20,000 transfers + duplicates</text>
+  <rect x="740" y="222" width="150" height="58" rx="6" fill="#0f2a24" stroke="#1f5c4f"/>
+  <text class="s" x="752" y="244">workers, ledger,</text><text class="s" x="752" y="262">faults, breaker, outbox</text>
+  <path class="ln back" d="M813 296H577" marker-end="url(#a)"/><text class="s" x="600" y="290">metrics every 250 ms</text>
+  <path class="ln back" d="M575 316H347" marker-end="url(#a)"/><text class="k" x="360" y="310">5 · event: metrics → charts move</text>
+  <path class="ln back" d="M813 350H577" marker-end="url(#a)"/><text class="s" x="600" y="344">InvariantChecker result</text>
+  <path class="ln back" d="M575 370H347" marker-end="url(#a)"/><text class="k" x="360" y="364">6 · event: report → ✓ checks</text>
+  <path class="ln back" d="M345 386H117" marker-end="url(#a)"/><text class="s" x="125" y="380">sees the checks turn green</text>
+</svg>

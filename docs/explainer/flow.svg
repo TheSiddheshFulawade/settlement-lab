@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 370" width="940" height="370" role="img" aria-labelledby="t d">
+  <title id="t">One transfer through Settlement Lab</title>
+  <desc id="d">A transfer passes the idempotency store, the validator, a bounded queue and a worker, is posted to the ledger, then published to a general ledger through retry, a circuit breaker and an outbox. A duplicate is answered at the idempotency store and never applied twice.</desc>
+  <style>
+    .bg{fill:#0b1220}.box{fill:#121c2e;stroke:#2a3a55;stroke-width:1.5}.hot{stroke:#2dd4bf}
+    .h{font:600 14px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#e6edf6}
+    .s{font:12px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#93a4bd}
+    .m{font:600 12px ui-monospace,Consolas,"SFMono-Regular",monospace}
+    .ok{fill:#4ade80}.warn{fill:#f59e0b}.bad{fill:#f87171}.teal{fill:#2dd4bf}
+    .ln{stroke:#3b4d6b;stroke-width:2;fill:none}.slot{fill:#1b2a42;stroke:#2a3a55}
+    .pulse{animation:pulse 3s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+    @media (prefers-reduced-motion:reduce){.anim{display:none}.pulse{animation:none}}
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#3b4d6b"/></marker>
+  </defs>
+  <rect class="bg" width="940" height="370" rx="14"/>
+  <text class="h" x="24" y="34">One transfer through Settlement Lab</text>
+  <text class="s" x="24" y="54">id · from account · to account · amount (in paise, a long, never a double)</text>
+
+  <!-- row 1 -->
+  <path class="ln" d="M140 105H170M295 105H325M445 105H480M600 105H635M755 105H790" marker-end="url(#a)"/>
+  <rect class="box" x="20" y="80" width="120" height="50" rx="8"/><text class="h" x="80" y="110" text-anchor="middle">Client</text>
+  <rect class="box hot" x="172" y="80" width="123" height="50" rx="8"/><text class="h" x="233" y="102" text-anchor="middle">Idempotency</text><text class="s" x="233" y="120" text-anchor="middle">seen this id?</text>
+  <rect class="box" x="327" y="80" width="118" height="50" rx="8"/><text class="h" x="386" y="102" text-anchor="middle">Validator</text><text class="s" x="386" y="120" text-anchor="middle">amount, accounts</text>
+  <rect class="box" x="482" y="80" width="118" height="50" rx="8"/><text class="h" x="541" y="99" text-anchor="middle">Bounded queue</text>
+  <rect class="slot" x="497" y="108" width="14" height="12" rx="2"/><rect class="slot" x="515" y="108" width="14" height="12" rx="2"/><rect class="slot" x="533" y="108" width="14" height="12" rx="2"/><rect class="slot" x="551" y="108" width="14" height="12" rx="2"/><rect class="slot" x="569" y="108" width="14" height="12" rx="2"/>
+  <rect class="box" x="637" y="80" width="118" height="50" rx="8"/><text class="h" x="696" y="102" text-anchor="middle">Workers × 8</text><text class="s" x="696" y="120" text-anchor="middle">platform | virtual</text>
+  <rect class="box hot" x="792" y="80" width="128" height="50" rx="8"/><text class="h" x="856" y="102" text-anchor="middle">Ledger</text><text class="s" x="856" y="120" text-anchor="middle">debit + credit, atomic</text>
+
+  <text class="m bad" x="233" y="152" text-anchor="middle">duplicate → same answer</text>
+  <text class="m warn" x="386" y="152" text-anchor="middle">bad → 400</text>
+  <text class="m warn" x="541" y="152" text-anchor="middle">full → 503, retry</text>
+  <text class="m ok" x="856" y="152" text-anchor="middle">POSTED → 201</text>
+  <text class="m warn" x="856" y="168" text-anchor="middle">no funds → 422</text>
+
+  <!-- row 2 -->
+  <path class="ln" d="M856 176V230" marker-end="url(#a)"/>
+  <path class="ln" d="M780 255H720M545 255H500" marker-end="url(#a)"/>
+  <rect class="box" x="782" y="230" width="140" height="50" rx="8"/><text class="h" x="852" y="252" text-anchor="middle">Outbox</text><text class="s" x="852" y="270" text-anchor="middle">never loses a posting</text>
+  <rect class="box" x="547" y="230" width="173" height="50" rx="8"/><text class="h" x="633" y="252" text-anchor="middle">Retry + circuit breaker</text><text class="s" x="633" y="270" text-anchor="middle">Resilience4j</text>
+  <rect class="box" x="327" y="230" width="173" height="50" rx="8" stroke-dasharray="5 4"/><text class="h" x="413" y="252" text-anchor="middle">General ledger (fake)</text><text class="s" x="413" y="270" text-anchor="middle">injected: slow · errors · outage</text>
+  <text class="s" x="24" y="246">The caller gets its answer as soon as</text>
+  <text class="s" x="24" y="263">the ledger posts. Publishing to the GL</text>
+  <text class="s" x="24" y="280">happens after, and is retried until it lands.</text>
+
+  <!-- invariants -->
+  <rect x="20" y="306" width="900" height="44" rx="8" fill="#0f2a24" stroke="#1f5c4f"/>
+  <text class="m ok pulse" x="40" y="333">✓ total money never changes   ✓ each transfer posted exactly once   ✓ no balance below zero   ✓ GL = ledger</text>
+
+  <!-- moving transfers -->
+  <g class="anim">
+    <circle r="7" class="teal"><animateMotion dur="6s" repeatCount="indefinite" path="M80 105H856V255H413" keyPoints="0;0.62;1;1" keyTimes="0;0.55;0.9;1" calcMode="linear"/></circle>
+    <circle r="7" class="teal" opacity=".85"><animateMotion dur="6s" begin="2s" repeatCount="indefinite" path="M80 105H856V255H413" keyPoints="0;0.62;1;1" keyTimes="0;0.55;0.9;1" calcMode="linear"/></circle>
+    <circle r="7" class="teal" opacity=".7"><animateMotion dur="6s" begin="4s" repeatCount="indefinite" path="M80 105H856V255H413" keyPoints="0;0.62;1;1" keyTimes="0;0.55;0.9;1" calcMode="linear"/></circle>
+    <circle r="7" class="bad"><animateMotion dur="3s" begin="1s" repeatCount="indefinite" path="M80 105H233H80" calcMode="linear"/></circle>
+  </g>
+</svg>
