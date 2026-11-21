@@ -250,3 +250,142 @@ Maven parent with two modules:
 - [ ] V2-04 `GET /api/v1/events` SSE stream with bounded per-subscriber buffers (REQ-API-005)
 - [ ] V2-05 README v2 section, how to run, an HTTP load check with invariants
 - [ ] V2-06 Deploy to `api.siddheshfulawade.com` (only with the user's explicit yes)
+
+# Settlement Lab · v3 spec (PostgreSQL ledger)
+
+Written 2026-11-21, per ADR-0002. Same rules as section 0. The engine module stays framework-free
+and database-free: PostgreSQL lives in a new module behind the existing `Ledger` port. The user
+lifted the feature pause for v3 only (2026-11-21); V2-04 to V2-06 stay paused. One task per
+session, each ending with its own PR for the user's merge.
+
+## 14. Scope (v3)
+
+In: a `ledger-postgres` module with `PostgresLedger` in two modes (pessimistic row locks,
+optimistic version column) · idempotency by database constraint, surviving restarts and shared by
+several engine instances · a transactional outbox table and a relay · Flyway migrations · the same
+property and stress suites as the in-memory ledgers, run against a real PostgreSQL with
+Testcontainers · runner cells for both modes · README Decisions and learn notes.
+
+Out: wiring into the `api` module and deploying to Neon/Cloud Run (that is V2-06 work, with the
+user's explicit yes), multi-region, sharding, Oracle (ADR-0002 explains why; the learn notes give
+the Oracle equivalents).
+
+## 15. Requirements (EARS)
+
+- REQ-DB-001 THE `PostgresLedger` SHALL implement `Ledger` and pass the same property and stress
+  suites as `LockingLedger` and `CasLedger` (REQ-LAB-002, 003, 005, 006), in both modes.
+- REQ-DB-002 THE schema SHALL store money as `BIGINT` minor units with `CHECK (balance >= 0)`; no
+  floating-point or `NUMERIC` money columns.
+- REQ-DB-003 WHEN a transfer is applied in pessimistic mode, THE ledger SHALL lock both account rows
+  with `SELECT … FOR UPDATE` in ascending account id order, inside one transaction, and SHALL NOT
+  deadlock with opposing transfers.
+- REQ-DB-004 WHEN a transfer is applied in optimistic mode, THE ledger SHALL update each account
+  with `… WHERE id = ? AND version = ?`; IF either update changes zero rows, THEN it SHALL roll back
+  and retry with jittered back-off, and SHALL NOT lose an update.
+- REQ-DB-004a IF a transfer still conflicts after 10 attempts, THEN THE ledger SHALL roll back and
+  return `REJECTED_CONTENTION`, storing nothing for that id, and THE engine SHALL release the id's
+  idempotency claim (as for `QUEUE_FULL`), so a retry with the same id is processed fresh.
+- REQ-DB-005 WHEN the same transfer id is applied again, including concurrently, from a second
+  `PostgresLedger` instance on the same database, or after a restart, THE ledger SHALL apply it at
+  most once and return the original outcome (a unique key on the transfer id). This includes
+  `REJECTED_FUNDS`: same id, same answer; a new attempt needs a new id (the standard
+  idempotency-key rule). Only outcomes that store nothing (`QUEUE_FULL`, `REJECTED_CONTENTION`)
+  leave the id free.
+- REQ-DB-006 WHEN a transfer is posted, THE posting and its outbox row SHALL commit in the same
+  transaction: neither exists without the other.
+- REQ-DB-007 THE outbox relay SHALL claim rows with `FOR UPDATE SKIP LOCKED`, publish them to the
+  general ledger port, and delete them only after the GL accepts; two relays running at once
+  SHALL NOT claim the same row while its lease is live.
+- REQ-DB-008 WHEN the engine is drained, including after it was stopped mid-run and a new instance
+  started on the same database, every posting SHALL appear in the GL exactly once (REQ-LAB-012).
+- REQ-DB-009 THE ledger SHALL make no network call other than to the database inside a
+  transaction, and SHALL bound lock waits with `lock_timeout` and statements with
+  `statement_timeout`.
+- REQ-DB-010 `snapshot()` SHALL return balances whose total equals the opening total
+  (REQ-LAB-005), read in a single statement.
+- REQ-DB-011 THE schema SHALL change only through Flyway migrations; an applied migration is never
+  edited.
+- REQ-DB-012 THE database tests SHALL run locally with Docker and on the Ubuntu CI jobs; the Windows
+  jobs SHALL run every other test. WHEN database tests are enabled and Docker is missing, THEN they
+  SHALL fail, not skip.
+- REQ-API-008 WHEN the engine answers `REJECTED_CONTENTION`, THE API SHALL respond 503 with
+  `Retry-After`, like `QUEUE_FULL` (REQ-API-001).
+
+## 16. Design
+
+### 16.1 Module
+
+| Module | Contents | Depends on |
+| ------ | -------- | ---------- |
+| `ledger-postgres` (new) | `PostgresLedger`, `LockMode` (`PESSIMISTIC`, `OPTIMISTIC`), `OutboxRelay`, Flyway migrations | `engine`; `java.sql`/`javax.sql`; PostgreSQL JDBC driver and Flyway (runtime); Testcontainers and HikariCP (test) |
+
+- `PostgresLedger` takes a `javax.sql.DataSource`, so the pool is the caller's choice (HikariCP in
+  tests and the runner; Spring Boot's in the api later). Plain JDBC, no JPA: every statement and
+  lock is visible.
+- The engine's property and stress suites move behind an engine **test-jar**, so `ledger-postgres`
+  adds `POSTGRES_PESSIMISTIC` and `POSTGRES_OPTIMISTIC` to the same parameterised suites instead
+  of copying them. The module stays on JUnit 5.14 (jqwik).
+- ArchUnit: the engine still imports no JDBC; `ledger-postgres` depends on `engine`, never the
+  reverse.
+
+### 16.2 Schema (Flyway `V1__ledger.sql`)
+
+| Table | Columns | Why |
+| ----- | ------- | --- |
+| `account` | `id BIGINT PK`, `balance BIGINT NOT NULL CHECK (balance >= 0)`, `version BIGINT NOT NULL` | balances; `version` for optimistic mode |
+| `transfer` | `id TEXT PK`, `outcome TEXT NOT NULL`, `posting_seq BIGINT NULL` | one row per transfer id, every outcome: the idempotency record |
+| `posting` | `seq BIGINT PK` (identity), `transfer_id TEXT UNIQUE`, `source`, `target`, `amount` | the ledger's postings, in sequence order |
+| `outbox` | `posting_seq BIGINT PK REFERENCES posting`, `attempts INT`, `next_attempt_at TIMESTAMPTZ` | postings not yet accepted by the GL |
+
+### 16.3 One transfer (pessimistic, `READ COMMITTED`)
+
+1. `BEGIN`; `INSERT INTO transfer (id, outcome) VALUES (?, 'PENDING') ON CONFLICT (id) DO
+   NOTHING`. Zero rows means a duplicate: read and return the stored outcome. On a conflicting key
+   PostgreSQL waits for the other transaction to commit, so concurrent duplicates serialise here,
+   and no one ever sees `PENDING`: the row is visible only after step 3 has set the real outcome.
+2. `SELECT … FROM account WHERE id IN (?, ?) ORDER BY id FOR UPDATE`: both rows, lower id first.
+3. Check funds; update both balances; insert `posting` and `outbox`; set the transfer's outcome.
+4. `COMMIT`. On `REJECTED_FUNDS`, step 3 records only the outcome.
+
+Optimistic mode replaces step 2 with a plain read of `balance, version` and makes each update
+conditional on the version. A conflict rolls back the whole transaction, the `transfer` row
+included, and retries with jittered back-off, at most 10 attempts; after that the answer is
+`REJECTED_CONTENTION` and nothing is stored, so the id stays free. `Outcome` gains
+`REJECTED_CONTENTION`, and the engine's worker releases the claim for it, as it already does for
+`QUEUE_FULL`. `READ COMMITTED` is enough in both modes: the row lock or the
+version check does the work, so no `SERIALIZABLE` retry handling is needed. A worker holds one
+connection per transfer, so the pool size must be at least the worker count.
+
+### 16.4 Outbox relay
+
+The engine runs with a no-op `PostingPublisher` in database mode, because the outbox row is
+already durable. `OutboxRelay` polls `SELECT … FROM outbox WHERE next_attempt_at <= now() ORDER BY
+posting_seq LIMIT n FOR UPDATE SKIP LOCKED`, publishes through `ResilientPublisher`, deletes the rows the GL accepted and
+pushes back `next_attempt_at` for the rest, all without holding a transaction open during the
+GL call: claim with a short lease (`next_attempt_at = now() + lease`), commit, call, then delete.
+The GL is keyed by transfer id, so a resend after a lost acknowledgement is harmless.
+
+### 16.5 Tests and CI
+
+- Testcontainers `postgres` image pinned by version; one container per test class, schema reset
+  between tests by Flyway `clean` + `migrate`.
+- Tagged `database`. A Maven profile `db` (on in the Ubuntu CI jobs and opt-in locally) runs them;
+  without it they are excluded, and the module's JaCoCo gate is skipped with them, so Windows CI
+  stays green without silently passing an empty check.
+- Two-instance test: two `PostgresLedger`s on one database, same transfers from both, invariants
+  hold and no id is posted twice (the "two servers" question).
+- Restart test: stop the engine with rows in the outbox, start a new one, drain, REQ-DB-008 holds.
+
+## 17. Tasks (v3, test-first)
+
+- [ ] V3-01 `ledger-postgres` module, Flyway V1 schema, Testcontainers base test, `db` profile, CI on Ubuntu only; ADR-0001 entries (REQ-DB-002, 011, 012)
+- [ ] V3-02 Engine test-jar: ledger property and stress suites shared, in-memory ledgers still green (no behaviour change)
+- [ ] V3-03 `PostgresLedger` pessimistic on the shared suites, opposing-transfer deadlock test, timeouts (REQ-DB-001, 003, 009, 010)
+- [ ] V3-04 Idempotency by `transfer` key: concurrent duplicates, two instances, after restart, a duplicate `REJECTED_FUNDS` returns the stored rejection; README Decisions entry on the idempotency-key rule (REQ-DB-005)
+- [ ] V3-05 Optimistic mode on the same suites, retry with jitter capped at 10, `REJECTED_CONTENTION` in `Outcome` with the engine releasing the claim, the api's 503 + `Retry-After` mapping and its test, conflict count in metrics (REQ-DB-004, 004a, REQ-API-008)
+- [ ] V3-06 Transactional outbox and `OutboxRelay` with `SKIP LOCKED`, two relays, restart and fault drains (REQ-DB-006 to 008)
+- [ ] V3-07 Runner cells for both database modes behind a `--db` option (local only, not in CI; the database tests still run on Ubuntu CI), README Decisions and results, `docs/learn` notes with Oracle equivalents, one TODO-ME per task
+
+Each task follows the same flow: `test-engineer` writes the failing tests, `database-engineer` or
+`java-engineer` makes them pass, `mvnw verify`, `tutor` writes the `docs/learn` note with Oracle
+equivalents, then `/ship`; stop at the PR for the user's merge.
