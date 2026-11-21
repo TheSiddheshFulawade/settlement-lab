@@ -16,6 +16,22 @@ money, never apply the same transfer twice even when it arrives twice, stay resp
 downstream general ledger (GL) is slow or down, and push back instead of falling over when load
 exceeds capacity. Then: how do two locking strategies and two threading models compare?
 
+## How it works, in three pictures
+
+**One transfer, end to end.** A duplicate (red) is answered at the idempotency store and never applied twice.
+
+![One transfer through Settlement Lab](docs/explainer/flow.svg)
+
+**Why ordered locking cannot deadlock.**
+
+![Deadlock versus ordered locking](docs/explainer/locking.svg)
+
+**When the general ledger is down:** fail fast, keep the posting in the outbox, resend later.
+
+![Circuit breaker states](docs/explainer/breaker.svg)
+
+A 9-page explainer with the full low-level design is in [docs/explainer/Settlement-Lab-LLD.pdf](docs/explainer/Settlement-Lab-LLD.pdf).
+
 ## Design
 
 | Package | What it holds | May import |

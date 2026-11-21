@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 400" width="940" height="400" role="img" aria-labelledby="t d">
+  <title id="t">Settlement Lab modules and packages</title>
+  <desc id="d">Two Maven modules. The api module (Spring Boot) depends on the engine module. Inside the engine, the domain package depends only on Java; idempotency, pipeline, gl and resilience build on it; the runner wires everything.</desc>
+  <style>
+    .bg{fill:#0b1220}.mod{fill:#0f1828;stroke:#2a3a55;stroke-width:1.5;stroke-dasharray:6 5}
+    .pk{fill:#121c2e;stroke:#2a3a55;stroke-width:1.5}.core{stroke:#2dd4bf;stroke-width:2}
+    .h{font:600 14px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#e6edf6}
+    .s{font:12px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#93a4bd}
+    .tag{font:600 11px ui-monospace,Consolas,monospace;fill:#2dd4bf}
+    .ln{stroke:#3b4d6b;stroke-width:1.8;fill:none}
+  </style>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3b4d6b"/></marker></defs>
+  <rect class="bg" width="940" height="400" rx="14"/>
+
+  <rect class="mod" x="20" y="20" width="230" height="360" rx="12"/>
+  <text class="tag" x="36" y="44">MODULE api  (v2, Spring Boot 4)</text>
+  <rect class="pk" x="36" y="62" width="198" height="66" rx="8"/><text class="h" x="50" y="86">TransferController</text><text class="s" x="50" y="106">POST /api/v1/transfers</text>
+  <rect class="pk" x="36" y="138" width="198" height="66" rx="8"/><text class="h" x="50" y="162">Account + Metrics</text><text class="s" x="50" y="182">GET /accounts/{id}, /metrics</text>
+  <rect class="pk" x="36" y="214" width="198" height="66" rx="8" stroke-dasharray="4 3"/><text class="h" x="50" y="238">EventStream (SSE)</text><text class="s" x="50" y="258">GET /events · on a branch</text>
+  <rect class="pk" x="36" y="290" width="198" height="74" rx="8"/><text class="h" x="50" y="314">SettlementRuntime</text><text class="s" x="50" y="333">builds the engine from config,</text><text class="s" x="50" y="350">stops it in a safe order</text>
+
+  <rect class="mod" x="280" y="20" width="640" height="360" rx="12"/>
+  <text class="tag" x="296" y="44">MODULE engine  (plain Java 21+, no Spring: ArchUnit-enforced)</text>
+
+  <rect class="pk core" x="300" y="270" width="600" height="94" rx="8"/>
+  <text class="h" x="318" y="296">domain</text><text class="s" x="380" y="296">imports java.* only</text>
+  <text class="s" x="318" y="318">Money (long paise) · AccountId · Transfer · Posting · Outcome</text>
+  <text class="s" x="318" y="338">Ledger port → LockingLedger | CasLedger · InvariantChecker · PostingPublisher port</text>
+
+  <rect class="pk" x="300" y="150" width="140" height="80" rx="8"/><text class="h" x="314" y="176">idempotency</text><text class="s" x="314" y="196">IdempotencyStore</text><text class="s" x="314" y="213">one future per id</text>
+  <rect class="pk" x="455" y="150" width="140" height="80" rx="8"/><text class="h" x="469" y="176">pipeline</text><text class="s" x="469" y="196">SettlementEngine</text><text class="s" x="469" y="213">queue · WorkerPool</text>
+  <rect class="pk" x="610" y="150" width="140" height="80" rx="8"/><text class="h" x="624" y="176">gl</text><text class="s" x="624" y="196">FakeGeneralLedger</text><text class="s" x="624" y="213">faults · Outbox</text>
+  <rect class="pk" x="765" y="150" width="135" height="80" rx="8"/><text class="h" x="779" y="176">resilience</text><text class="s" x="779" y="196">ResilientPublisher</text><text class="s" x="779" y="213">Resilience4j</text>
+
+  <rect class="pk" x="455" y="62" width="295" height="58" rx="8"/><text class="h" x="469" y="86">runner</text><text class="s" x="469" y="106">Main · Workload · ScenarioRunner · results</text>
+
+  <path class="ln" d="M370 230V268M525 230V268M680 230V268M832 230V268" marker-end="url(#a)"/>
+  <path class="ln" d="M525 120V148M602 120L680 148M740 120L825 148M470 120L372 148" marker-end="url(#a)"/>
+  <path class="ln" d="M234 327H298" marker-end="url(#a)"/>
+  <text class="s" x="240" y="318">uses</text>
+</svg>

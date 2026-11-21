@@ -55,7 +55,17 @@ architecture rules. Run the results with the runner described in SPEC.md §4.6.
   `guard-bash` and `protect-secrets` (safety). Tests: `node --test .claude/hooks/*.test.mjs`.
 - Skills: `java-standards` and `testing-playbook` (load before Java or test work), `/ship`,
   `/handoff`, `/quiz [module]`.
-- Agent: `security-auditor`, before any deploy and after changes to `api`, pom files or CI.
+- Agents (each runs in its own context and reports back):
+  - `test-engineer`: failing tests first, for every task.
+  - `java-engineer`: makes them pass (engine and api).
+  - `database-engineer`: PostgreSQL schema, SQL, locking and outbox (ADR-0002).
+  - `deploy-engineer`: container and Cloud Run/Neon setup; never deploys or spends without a yes.
+  - `security-auditor`: before any deploy and after changes to `api`, pom files or CI.
+  - `tutor`: `docs/learn` notes, plain explanations, interview answers, TODO-ME reviews.
+- Typical task: `test-engineer` → `java-engineer` (or `database-engineer`) → `mvnw verify` →
+  `tutor` writes the learn note → `/ship`.
+- Database and hosting are decided in `docs/adr/0002-database-and-hosting.md`: PostgreSQL (Neon) and
+  Cloud Run, both in Singapore, free tiers only.
 
 ## Handoffs
 
