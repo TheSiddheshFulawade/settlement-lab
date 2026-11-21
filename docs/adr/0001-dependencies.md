@@ -15,7 +15,8 @@ and an entry here for every dependency. Fewer dependencies means less to defend 
 | Dependency | Version | Why | Added in |
 | ---------- | ------- | --- | -------- |
 | `io.github.resilience4j:resilience4j-retry`, `resilience4j-circuitbreaker` | 2.4.0 | Retry with exponential back-off and jitter, and a circuit breaker, around the general ledger (SPEC.md section 4.4). Used only in the `resilience` package (ArchUnit). Well-known, small, no reflection or framework. | L-07 |
-| `org.slf4j:slf4j-api` (transitive, from Resilience4j) | 1.7.30 | Logging facade Resilience4j needs. No logging provider is added, so SLF4J prints one "no provider" notice and logs nothing. | L-07 |
+| `org.slf4j:slf4j-api` (transitive, from Resilience4j) | 1.7.30 | Logging facade Resilience4j needs. | L-07 |
+| `org.slf4j:slf4j-nop` (engine, `optional`) | 1.7.30 | A provider that discards log output, so the runner no longer prints SLF4J's "Failed to load class StaticLoggerBinder" notice. Same version as `slf4j-api`, because a 2.x provider is not found by the 1.7 API and the enforcer requires convergence. **Optional**, so it is not passed on to the `api` module: Spring Boot brings Logback there, and two providers would cause a "multiple bindings" warning. Alternative: scope `runtime` (still transitive into api) or a separate runner module (more structure than one notice justifies). | fix/slf4j-notice |
 
 ### Runtime, `api` module only (v2)
 

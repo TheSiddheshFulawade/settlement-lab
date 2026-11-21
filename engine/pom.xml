@@ -37,6 +37,15 @@
       <artifactId>resilience4j-circuitbreaker</artifactId>
       <version>${resilience4j.version}</version>
     </dependency>
+    <!-- Silences SLF4J's "no provider" notice in the runner. Same version as the slf4j-api that
+         Resilience4j brings (dependency convergence). Optional, so it never reaches the api module,
+         where Spring Boot's Logback is the provider (ADR-0001). -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-nop</artifactId>
+      <version>1.7.30</version>
+      <optional>true</optional>
+    </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
