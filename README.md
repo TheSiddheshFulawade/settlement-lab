@@ -308,3 +308,23 @@ framework-free.
 - **Chosen:** `GET /api/v1/metrics` returns the runner's columns live (engine, outbox, breaker,
   general ledger) plus the settings. **Alternative:** Spring Boot Actuator and Micrometer.
   **Why:** no extra dependency for a handful of numbers; Actuator can come with deployment (V2-06).
+
+### PostgreSQL module and schema (V3-01)
+
+- **Chosen:** a separate `ledger-postgres` module that depends on `engine`, using plain JDBC.
+  **Alternative:** JPA/Hibernate, or JDBC inside the engine. **Why:** the engine keeps importing
+  only `java.*`, and every statement and lock stays visible in the code, which is what the v3
+  measurements are about.
+- **Chosen:** money as `BIGINT` minor units with `CHECK (balance >= 0)`, the transfer id as the
+  `transfer` primary key, `posting.transfer_id` `UNIQUE`, and an outbox foreign key to its posting.
+  **Alternative:** enforce these in Java only. **Why:** the constraints are the last line of
+  defence. A buggy statement, or a second server, fails loudly instead of committing a broken ledger.
+- **Chosen:** Flyway versioned migrations, with V1's checksum pinned in a test. **Alternative:**
+  Liquibase, or a hand-run `schema.sql`. **Why:** plain SQL files and a checksum that refuses an
+  edited migration (REQ-DB-011). Production keeps `clean` disabled.
+- **Chosen:** Testcontainers with a pinned `postgres` image, run behind a `db` profile on the
+  Ubuntu CI jobs only. Without Docker the tests fail, not skip. **Alternative:** H2 or an embedded
+  PostgreSQL on every OS. **Why:** row locks, `SKIP LOCKED` and constraint errors must be tested on
+  the real database, and Windows runners cannot run Linux containers. Windows still runs the
+  architecture and image-sync tests, and the module's coverage gate is skipped there instead of
+  passing on no data.

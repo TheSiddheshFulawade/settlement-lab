@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.siddheshfulawade</groupId>
+    <artifactId>settlement-lab</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>settlement-lab-ledger-postgres</artifactId>
+  <name>Settlement Lab · ledger-postgres</name>
+  <description>PostgreSQL-backed ledger: Flyway schema, plain-JDBC SQL, locking and outbox (v3).</description>
+
+  <properties>
+    <!-- Default build (no Docker needed, so it also works on Windows CI): the tests tagged "database"
+         are excluded, and so is JaCoCo, because without them this module would be measured on code
+         no test reaches and the 85 % gate would fail or, worse, be loosened. We do not let the gate
+         pass silently on an empty run: the database tests are opt-in with -Pdb (REQ-DB-012). -->
+    <db.excluded.groups>database</db.excluded.groups>
+    <jacoco.skip>true</jacoco.skip>
+  </properties>
+
+  <profiles>
+    <profile>
+      <!-- ./mvnw verify -Pdb : runs the database tests against a real PostgreSQL (Testcontainers,
+           Docker required) and applies the 85 % line gate to this module. On when Docker exists:
+           the Ubuntu CI jobs and the laptop. With -Pdb and no Docker the tests fail, not skip. -->
+      <id>db</id>
+      <properties>
+        <db.excluded.groups/>
+        <jacoco.skip>false</jacoco.skip>
+      </properties>
+    </profile>
+  </profiles>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.junit</groupId>
+        <artifactId>junit-bom</artifactId>
+        <version>${junit.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.siddheshfulawade</groupId>
+      <artifactId>settlement-lab-engine</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+      <version>${flyway.version}</version>
+    </dependency>
+    <dependency>
+      <!-- Flyway 10+ ships each database as a separate module; without it migrate fails at runtime. -->
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+      <version>${flyway.version}</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <version>${postgresql.version}</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <version>${assertj.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <version>${archunit.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-postgresql</artifactId>
+      <version>${testcontainers.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-junit-jupiter</artifactId>
+      <version>${testcontainers.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.zaxxer</groupId>
+      <artifactId>HikariCP</artifactId>
+      <version>${hikaricp.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <excludedGroups>${db.excluded.groups}</excludedGroups>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

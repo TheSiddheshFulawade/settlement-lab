@@ -40,4 +40,18 @@ jobs:
             sleep $((attempt * 15))
           done
           exit 1
-      - run: ./mvnw --batch-mode -C -s .github/maven-ci-settings.xml verify
+      # Ubuntu only: pre-pull the PostgreSQL image the database tests use, retried like the download
+      # above, so a flaky registry does not fail the tests. The tag must equal POSTGRES_IMAGE in
+      # ledger-postgres/src/test/java/.../PostgresTestBase.java (ImageTagSyncTest checks this).
+      - name: Pre-pull the PostgreSQL test image
+        if: runner.os == 'Linux'
+        run: |
+          for attempt in 1 2 3; do
+            docker pull postgres:18.7-alpine3.24 && exit 0
+            echo "Image pull attempt $attempt failed; retrying in $((attempt * 15)) s"
+            sleep $((attempt * 15))
+          done
+          exit 1
+      # -Pdb runs the database tests (Testcontainers, needs Linux Docker) and the module's coverage
+      # gate: Ubuntu only. Windows runners cannot run Linux containers, so they run everything else.
+      - run: ./mvnw --batch-mode -C -s .github/maven-ci-settings.xml verify ${{ runner.os == 'Linux' && '-Pdb' || '' }}
