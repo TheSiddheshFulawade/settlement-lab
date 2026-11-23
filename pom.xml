@@ -13,6 +13,7 @@
 
   <modules>
     <module>engine</module>
+    <module>ledger-postgres</module>
     <module>api</module>
   </modules>
 
@@ -28,7 +29,13 @@
     <!-- Runtime dependencies: see docs/adr/0001-dependencies.md -->
     <resilience4j.version>2.4.0</resilience4j.version>
 
+    <!-- Database (v3, ledger-postgres module only): see docs/adr/0001-dependencies.md -->
+    <postgresql.version>42.7.14</postgresql.version>
+    <flyway.version>13.13.0</flyway.version>
+
     <!-- Test dependencies: see docs/adr/0001-dependencies.md -->
+    <testcontainers.version>2.0.5</testcontainers.version>
+    <hikaricp.version>7.1.0</hikaricp.version>
     <junit.version>5.14.4</junit.version>
     <assertj.version>3.27.7</assertj.version>
     <jqwik.version>1.10.2</jqwik.version>
@@ -55,6 +62,14 @@
   <build>
     <pluginManagement>
       <plugins>
+        <plugin>
+          <!-- Runs DbResultsMain (test classpath) from ledger-postgres:
+               mvnw -Pdb -pl ledger-postgres -am test-compile exec:java -Dexec.classpathScope=test
+               -Dexec.mainClass=com.siddheshfulawade.settlementlab.postgres.DbResultsMain -->
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>exec-maven-plugin</artifactId>
+          <version>${exec.plugin.version}</version>
+        </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>

@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Settlement Lab: low-level design, explained</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 16mm 15mm 16mm 15mm;
+      }
+      :root {
+        --ink: #0f172a;
+        --mut: #475569;
+        --line: #e2e8f0;
+        --teal: #0d9488;
+        --tealbg: #ecfdf9;
+        --amber: #b45309;
+        --amberbg: #fffbeb;
+        --red: #b91c1c;
+        --redbg: #fef2f2;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        color-scheme: light;
+        background: #fff;
+      }
+      body {
+        background: #fff;
+        font:
+          10.6pt/1.5 "Segoe UI",
+          -apple-system,
+          Helvetica,
+          Arial,
+          sans-serif;
+        color: var(--ink);
+        margin: 0;
+      }
+      h1 {
+        font-size: 24pt;
+        margin: 0 0 4px;
+        letter-spacing: -0.3px;
+      }
+      h2 {
+        font-size: 15pt;
+        margin: 0 0 8px;
+        padding-top: 2px;
+        border-bottom: 2px solid var(--teal);
+        padding-bottom: 4px;
+      }
+      h3 {
+        font-size: 11.5pt;
+        margin: 14px 0 4px;
+      }
+      p {
+        margin: 0 0 8px;
+      }
+      .sub {
+        color: var(--mut);
+        font-size: 11pt;
+        margin-bottom: 14px;
+      }
+      .page {
+        page-break-before: always;
+      }
+      .num {
+        font-family: Consolas, "SFMono-Regular", monospace;
+      }
+      img.fig {
+        width: 100%;
+        display: block;
+        margin: 8px 0 4px;
+        border-radius: 8px;
+      }
+      .cap {
+        font-size: 9pt;
+        color: var(--mut);
+        margin-bottom: 10px;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      .card h3 {
+        margin-top: 0;
+      }
+      .tl {
+        background: var(--tealbg);
+        border: 1px solid #99e2d4;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin: 10px 0;
+      }
+      .warn {
+        background: var(--amberbg);
+        border: 1px solid #f5d38a;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin: 10px 0;
+      }
+      .bad {
+        background: var(--redbg);
+        border: 1px solid #f5b5b5;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin: 10px 0;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 9.6pt;
+        margin: 6px 0 10px;
+      }
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 5px 6px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #f8fafc;
+        font-weight: 600;
+      }
+      td.r,
+      th.r {
+        text-align: right;
+        font-family: Consolas, monospace;
+      }
+      ul {
+        margin: 4px 0 8px 18px;
+        padding: 0;
+      }
+      li {
+        margin: 2px 0;
+      }
+      .pill {
+        display: inline-block;
+        font:
+          600 8.5pt Consolas,
+          monospace;
+        padding: 1px 7px;
+        border-radius: 10px;
+        background: var(--tealbg);
+        color: var(--teal);
+        border: 1px solid #99e2d4;
+      }
+      .pill.a {
+        background: var(--amberbg);
+        color: var(--amber);
+        border-color: #f5d38a;
+      }
+      code {
+        font-family: Consolas, monospace;
+        font-size: 9.4pt;
+        background: #f1f5f9;
+        padding: 0 3px;
+        border-radius: 3px;
+      }
+      .q {
+        margin: 0 0 6px;
+      }
+      .q b {
+        color: var(--teal);
+      }
+      .foot {
+        font-size: 8.5pt;
+        color: var(--mut);
+        margin-top: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 1 -->
+    <h1>Settlement Lab</h1>
+    <div class="sub">
+      Low-level design in 10 minutes · what it is, how it works, and what it
+      measured
+    </div>
+
+    <div class="tl">
+      <b>In one sentence:</b> a Java engine that moves money between accounts
+      from many threads at once and <b>proves</b> it never creates, loses or
+      double-posts a single paisa, even when messages arrive twice, the
+      downstream ledger is slow or down, and traffic is higher than it can
+      handle.
+    </div>
+
+    <h3>Is it just "add and subtract funds"? Yes and no.</h3>
+    <p>
+      The arithmetic is deliberately simple: debit one account, credit another.
+      <b>That part is not the project.</b> A naive version does the arithmetic
+      once, on one thread, with happy inputs. Payment engineering is everything
+      that happens around that one line when real conditions hit it:
+    </p>
+    <div class="grid2">
+      <div class="card">
+        <h3>Naive version</h3>
+        <ul>
+          <li>One user, one thread</li>
+          <li>Every message arrives once</li>
+          <li>Every downstream call succeeds</li>
+          <li>"It worked when I tried it"</li>
+        </ul>
+      </div>
+      <div class="card" style="border-color: #99e2d4">
+        <h3>Settlement Lab</h3>
+        <ul>
+          <li>Many threads on the same accounts</li>
+          <li>Duplicates injected on purpose</li>
+          <li>Ledger made slow, flaky, or down</li>
+          <li>Correctness <b>proved</b> by invariant tests and measured</li>
+        </ul>
+      </div>
+    </div>
+    <p>
+      The hard questions in payments are not "can you add two numbers" but
+      <i>"what if two threads debit the same account?"</i>,
+      <i>"what if the message is delivered twice?"</i>,
+      <i>"what if the ledger times out halfway?"</i>. This project is a working,
+      tested answer to each of them, with the code and the tests in the open.
+    </p>
+
+    <div class="warn">
+      <b>Scope.</b> Today <b>everything is in memory, in one process, with no
+      database.</b> That keeps the concurrency rules visible in plain Java.
+      Section 8 shows how the same rules move into PostgreSQL, the planned v3.
+    </div>
+
+    <h3>What it is made of</h3>
+    <table>
+      <tr>
+        <th>Part</th>
+        <th>What</th>
+        <th>Status</th>
+      </tr>
+      <tr>
+        <td>Engine</td>
+        <td>
+          Plain Java 21+ library: ledgers, idempotency, queue, workers, fake
+          general ledger, retry, circuit breaker, outbox, invariant checker
+        </td>
+        <td><span class="pill">done</span></td>
+      </tr>
+      <tr>
+        <td>Runner</td>
+        <td>
+          Command-line benchmark: 12 scenarios × 100,000 transfers, results
+          table
+        </td>
+        <td><span class="pill">done</span></td>
+      </tr>
+      <tr>
+        <td>Tests</td>
+        <td>
+          Unit, jqwik property tests, concurrency stress tests, ArchUnit rules,
+          85 % coverage gate; CI on Linux and Windows
+        </td>
+        <td><span class="pill">done</span></td>
+      </tr>
+      <tr>
+        <td>HTTP API</td>
+        <td>Spring Boot 4: submit a transfer, read a balance, read metrics</td>
+        <td><span class="pill">done</span></td>
+      </tr>
+      <tr>
+        <td>Live stream, UI, deploy</td>
+        <td>
+          Event stream, a <code>/lab</code> page on siddheshfulawade.com, hosting at
+          <code>api.siddheshfulawade.com</code>
+        </td>
+        <td><span class="pill a">planned v2</span></td>
+      </tr>
+      <tr>
+        <td>Database</td>
+        <td>
+          Not used today (by design, see section 2). PostgreSQL ledger planned
+          (ADR-0002)
+        </td>
+        <td><span class="pill a">planned v3</span></td>
+      </tr>
+    </table>
+
+    <!-- 2 -->
+    <div class="page"></div>
+    <h2>1 · The four problems it solves</h2>
+    <table>
+      <tr>
+        <th style="width: 18%">Problem</th>
+        <th style="width: 30%">What goes wrong in a real system</th>
+        <th style="width: 30%">How Settlement Lab handles it</th>
+        <th>How it is proved</th>
+      </tr>
+      <tr>
+        <td><b>Race conditions</b></td>
+        <td>
+          Two threads read balance 100, both debit 80, both succeed: money
+          created from nothing.
+        </td>
+        <td>
+          Each account has its own lock; both accounts are locked before the
+          debit and credit.
+        </td>
+        <td>Stress tests with many threads; total must stay identical.</td>
+      </tr>
+      <tr>
+        <td><b>Deadlock</b></td>
+        <td>
+          T1 locks A and waits for B, T2 locks B and waits for A: both stuck
+          forever.
+        </td>
+        <td>
+          Always lock the <b>lower account id first</b>. No cycle of waits is
+          possible.
+        </td>
+        <td>Opposing transfers (A→B, B→A) run together under a timeout.</td>
+      </tr>
+      <tr>
+        <td><b>Duplicates</b></td>
+        <td>
+          A network retry delivers the same payment twice; customer charged
+          twice.
+        </td>
+        <td>
+          Idempotency store: the first copy is processed, every copy gets the
+          <b>same answer</b>.
+        </td>
+        <td>2 % duplicates injected in every run; "posted twice" must be 0.</td>
+      </tr>
+      <tr>
+        <td><b>Failing downstream</b></td>
+        <td>
+          The general ledger (GL) is slow or down; threads pile up; the whole
+          system falls over.
+        </td>
+        <td>
+          Answer the caller once the ledger posts; publish to the GL afterwards
+          with retry, a circuit breaker and an outbox.
+        </td>
+        <td>
+          Runs with FLAKY and OUTAGE faults; the GL must end equal to the
+          ledger.
+        </td>
+      </tr>
+    </table>
+    <p>
+      Plus <b>overload</b>: a bounded queue. When it is full the caller is told
+      "busy, retry" (<code>503</code>) instead of the server running out of
+      memory. This is called <b>back-pressure</b>.
+    </p>
+
+    <h3>The four invariants (rules that must hold after every run)</h3>
+    <div class="tl">
+      <span class="num">1</span> the sum of all balances never changes
+      &nbsp;·&nbsp; <span class="num">2</span> no transfer is posted twice
+      &nbsp;·&nbsp; <span class="num">3</span> no balance goes below zero
+      &nbsp;·&nbsp; <span class="num">4</span> the general ledger holds exactly
+      the ledger's postings
+    </div>
+    <p>
+      An <b>invariant checker</b> verifies these at the end of every test and
+      every benchmark scenario. This is the heart of the project: not "it seems
+      to work", but "here is the rule, and here is the check that runs it
+      100,000 times under faults".
+    </p>
+
+    <h3>Key terms</h3>
+    <table>
+      <tr>
+        <td style="width: 24%"><b>Ledger</b></td>
+        <td>The book of account balances and postings. Source of truth.</td>
+      </tr>
+      <tr>
+        <td><b>Posting</b></td>
+        <td>
+          The record that a transfer was applied (id, accounts, amount,
+          sequence).
+        </td>
+      </tr>
+      <tr>
+        <td><b>General ledger (GL)</b></td>
+        <td>
+          The downstream accounting system that must receive every posting. Here
+          it is a fake with injectable faults.
+        </td>
+      </tr>
+      <tr>
+        <td><b>Idempotent</b></td>
+        <td>Doing it twice has the same effect as doing it once.</td>
+      </tr>
+      <tr>
+        <td><b>Outbox</b></td>
+        <td>
+          A holding area for postings the GL has not accepted yet; resent until
+          they land.
+        </td>
+      </tr>
+      <tr>
+        <td><b>Circuit breaker</b></td>
+        <td>
+          Stops calling a failing service for a while, so it is not hammered
+          while sick.
+        </td>
+      </tr>
+      <tr>
+        <td><b>Virtual threads</b></td>
+        <td>
+          Java 21 lightweight threads; cheap to block. Compared against classic
+          platform threads.
+        </td>
+      </tr>
+    </table>
+
+    <!-- 3 -->
+    <div class="page"></div>
+    <h2>2 · Architecture and dependencies</h2>
+    <img class="fig" src="{{architecture}}" alt="Modules and packages" />
+    <div class="cap">
+      Two Maven modules. The engine never imports Spring; a test (ArchUnit)
+      fails the build if anyone tries. The API is a thin layer on top.
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h3>Runtime dependencies (deliberately few)</h3>
+        <ul>
+          <li>
+            <b>Java 21+</b> (built for 21, run on 25): locks, atomics,
+            <code>CompletableFuture</code>, virtual threads
+          </li>
+          <li><b>Resilience4j</b>: retry and circuit breaker</li>
+          <li><b>Spring Boot 4</b> (API module only): web, validation</li>
+        </ul>
+        <h3>Test and build</h3>
+        <ul>
+          <li>
+            JUnit 5, AssertJ, <b>jqwik</b> (property tests), Awaitility,
+            <b>ArchUnit</b>
+          </li>
+          <li>Maven wrapper, JaCoCo 85 % gate, Spotless formatter</li>
+          <li>GitHub Actions: Ubuntu + Windows × JDK 21 + 25</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Is there a database? No, on purpose.</h3>
+        <p>
+          Accounts live in Java memory. The goal of v1 was to show
+          <b>in-process concurrency</b> (locks, atomics, threads) with nothing
+          hiding it: no database doing the locking for you.
+        </p>
+        <p>
+          <b>Trade-off:</b> a crash loses state, and it cannot run on two
+          servers. In a real bank, balances and the outbox live in a database
+          with transactions.
+        </p>
+        <p>
+          <b>Next (v3):</b> a <code>PostgresLedger</code> next to the two
+          in-memory ones, passing the <b>same</b> invariant tests (see section
+          8).
+        </p>
+      </div>
+    </div>
+
+    <h3>Two ledger implementations, one interface</h3>
+    <table>
+      <tr>
+        <th>LockingLedger (pessimistic)</th>
+        <th>CasLedger (optimistic)</th>
+      </tr>
+      <tr>
+        <td>
+          One <code>ReentrantLock</code> per account. Lock both accounts in
+          ascending id order, debit, credit, unlock in <code>finally</code>.
+        </td>
+        <td>
+          No locks. The balance table is an immutable array swapped with
+          <code>compareAndSet</code>; on conflict, copy and retry.
+        </td>
+      </tr>
+      <tr>
+        <td>Unrelated transfers run in parallel.</td>
+        <td>Every write copies the whole table; contention causes retries.</td>
+      </tr>
+    </table>
+    <p>
+      Both pass the same tests. The runner measures which is faster and why
+      (section 5), instead of assuming that lock-free must be faster.
+    </p>
+
+    <!-- 4 -->
+    <div class="page"></div>
+    <h2>3 · One transfer, end to end</h2>
+    <img class="fig" src="{{flow}}" alt="Transfer flow" />
+    <div class="cap">
+      The animated version of this diagram (flow.svg) moves transfers through
+      the pipeline; the red one is a duplicate, answered at the idempotency
+      store.
+    </div>
+
+    <table>
+      <tr>
+        <th style="width: 4%">#</th>
+        <th style="width: 22%">Step</th>
+        <th>What happens</th>
+        <th style="width: 20%">Answer to caller</th>
+      </tr>
+      <tr>
+        <td>1</td>
+        <td>Idempotency store</td>
+        <td>
+          A map of transfer id → future result, claimed with one atomic
+          <code>putIfAbsent</code>. First caller owns it; a duplicate waits for
+          the same future.
+        </td>
+        <td>Duplicate: the <b>original</b> answer</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>Validator</td>
+        <td>Amount above zero, accounts exist and differ.</td>
+        <td><code>400</code> with the reason</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>Bounded queue</td>
+        <td>
+          <code>ArrayBlockingQueue</code>; waits at most 100 ms for space.
+        </td>
+        <td>Full: <code>503</code> + Retry-After</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>Worker</td>
+        <td>
+          8 workers, either platform threads or virtual threads behind a
+          semaphore (fair comparison).
+        </td>
+        <td>–</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>Ledger</td>
+        <td>
+          Lock both accounts (or CAS), check funds, debit and credit atomically,
+          record the posting.
+        </td>
+        <td><code>201</code> posted · <code>422</code> no funds</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td>Publish to GL</td>
+        <td>
+          Sent on a separate thread, so the caller never waits for the GL. Retry
+          3× with jitter inside a circuit breaker; failures go to the outbox and
+          are resent.
+        </td>
+        <td>(already answered)</td>
+      </tr>
+    </table>
+
+    <h3>Why answer before the GL confirms?</h3>
+    <p>
+      The ledger is the source of truth. If the caller had to wait for the GL, a
+      GL outage would stop all payments. Instead the GL is
+      <b>eventually consistent</b>: it always catches up, because the outbox
+      never drops a posting and the GL ignores a posting id it already has.
+      <b
+        >At-least-once delivery + an idempotent receiver = an exactly-once
+        effect.</b
+      >
+    </p>
+
+    <!-- 5 -->
+    <div class="page"></div>
+    <h2>4 · Two ideas worth a closer look</h2>
+    <img class="fig" src="{{locking}}" alt="Deadlock versus ordered locking" />
+    <div class="cap">
+      Why ordered locking cannot deadlock. Animated in locking.svg.
+    </div>
+    <p>
+      <b>The argument, not just the slogan:</b> a deadlock needs a cycle of
+      threads, each holding a lock the next one wants. With one global order, a
+      thread holding lock <i>k</i> only ever waits for a lock higher than
+      <i>k</i>. Going round a cycle, ids would have to keep rising and still
+      come back to the start, which is impossible.
+    </p>
+
+    <img class="fig" src="{{breaker}}" alt="Circuit breaker states" />
+    <div class="cap">
+      Circuit breaker states around the general ledger. Animated in breaker.svg.
+    </div>
+    <p>
+      <b>Why the breaker sits outside the retry:</b> when the breaker is open,
+      one publish attempt fails immediately instead of retrying three times
+      against a service that is known to be down. Retry handles blips; the
+      breaker handles outages; the outbox makes sure nothing is lost in either
+      case.
+    </p>
+
+    <!-- 6 -->
+    <div class="page"></div>
+    <h2>5 · Results: what the numbers say</h2>
+    <p>
+      One committed run: 10,000 accounts, 100,000 transfers per scenario, 20 %
+      of traffic on 20 "hot" accounts, 2 % duplicates, 8 workers, 4-core cloud
+      machine, JDK 21. All 12 scenarios passed every invariant. A selection:
+    </p>
+    <table>
+      <tr>
+        <th>Ledger</th>
+        <th>Threads</th>
+        <th>GL faults</th>
+        <th class="r">Transfers/s</th>
+        <th class="r">p99 µs</th>
+        <th class="r">Duplicates</th>
+        <th class="r">Outbox peak</th>
+        <th>Invariants</th>
+      </tr>
+      <tr>
+        <td>Locking</td>
+        <td>Platform</td>
+        <td>None</td>
+        <td class="r">248,861</td>
+        <td class="r">2,008</td>
+        <td class="r">2,006</td>
+        <td class="r">0</td>
+        <td>PASS</td>
+      </tr>
+      <tr>
+        <td>Locking</td>
+        <td>Virtual</td>
+        <td>Flaky</td>
+        <td class="r">225,608</td>
+        <td class="r">735</td>
+        <td class="r">2,006</td>
+        <td class="r">3</td>
+        <td>PASS</td>
+      </tr>
+      <tr>
+        <td>Locking</td>
+        <td>Platform</td>
+        <td>Outage</td>
+        <td class="r">172,734</td>
+        <td class="r">2,840</td>
+        <td class="r">2,006</td>
+        <td class="r">90,036</td>
+        <td>PASS</td>
+      </tr>
+      <tr>
+        <td>CAS</td>
+        <td>Platform</td>
+        <td>None</td>
+        <td class="r">54,027</td>
+        <td class="r">9,488</td>
+        <td class="r">2,006</td>
+        <td class="r">0</td>
+        <td>PASS</td>
+      </tr>
+      <tr>
+        <td>CAS</td>
+        <td>Virtual</td>
+        <td>None</td>
+        <td class="r">55,465</td>
+        <td class="r">3,779</td>
+        <td class="r">2,006</td>
+        <td class="r">0</td>
+        <td>PASS</td>
+      </tr>
+    </table>
+    <div class="grid2">
+      <div class="card">
+        <h3>Findings</h3>
+        <ul>
+          <li>
+            <b>Ordered locking beat CAS by 2.8× to 4.6×.</b> Each CAS write
+            copies an 80 KB table and throws it away on conflict; locks touch
+            only two accounts.
+          </li>
+          <li>
+            <b>Virtual threads had the lower p99 in all 6 pairs</b>, but no
+            clear throughput winner: the work is short and CPU-bound, so there
+            is little blocking to hide.
+          </li>
+          <li>
+            <b>An outage cost about 30 % throughput, not a collapse.</b> The
+            breaker opened once; the outbox held ~90,000 postings and drained
+            them all.
+          </li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Limits of this measurement</h3>
+        <ul>
+          <li>
+            One run, one 4-core machine: the <b>direction</b> is solid, exact
+            ratios are not.
+          </li>
+          <li>These are lab numbers, never production figures.</li>
+        </ul>
+        <p>
+          Reproduce it on your own machine:
+          <code>./mvnw -q -pl engine compile exec:java</code>
+        </p>
+      </div>
+    </div>
+
+    <!-- 7 -->
+    <div class="page"></div>
+    <h2>6 · The planned Lab page (v2): <code>siddheshfulawade.com/lab</code></h2>
+    <img class="fig" src="{{uimockup}}" alt="Lab page mockup" />
+    <div class="cap">
+      Mockup with illustrative numbers. The visitor chooses a ledger, a thread
+      model and a fault mode, clicks Run, and watches the engine work and the
+      invariants turn green.
+    </div>
+
+    <!-- 8 -->
+    <div class="page"></div>
+    <h2>7 · What happens when someone clicks Run</h2>
+    <img class="fig" src="{{uisequence}}" alt="Run sequence" />
+    <div class="cap">
+      Planned v2 flow. Built today: <code>POST /api/v1/transfers</code>,
+      <code>GET /accounts/{id}</code>, <code>GET /metrics</code>; the event
+      stream is on a branch. The <code>/runs</code> endpoint is proposed and not
+      yet in SPEC.md.
+    </div>
+    <ul>
+      <li>
+        <b>Server-sent events (SSE):</b> one long HTTP response the server keeps
+        writing to; simpler than WebSockets for one-way updates.
+      </li>
+      <li>
+        <b>Abuse limits:</b> runs per hour per visitor, maximum size and time,
+        two runs at once. A public demo without limits is a free
+        denial-of-service tool.
+      </li>
+      <li>
+        <b>Fallback:</b> if the free host is asleep, the page shows the
+        committed results and a short recording, so a visitor never sees an
+        error.
+      </li>
+    </ul>
+
+    <h3 style="margin-top: 16px">Questions the code answers</h3>
+    <div class="grid2">
+      <div>
+        <p class="q">
+          <b>Q</b> How do you prevent deadlock when locking two accounts?
+        </p>
+        <p class="q">
+          <b>Q</b> Optimistic vs pessimistic locking: when does each win?
+        </p>
+        <p class="q"><b>Q</b> How do you make a payment API idempotent?</p>
+        <p class="q">
+          <b>Q</b> What is back-pressure, and what do you return when
+          overloaded?
+        </p>
+      </div>
+      <div>
+        <p class="q">
+          <b>Q</b> Exactly-once delivery: is it possible? What do you do
+          instead?
+        </p>
+        <p class="q">
+          <b>Q</b> Retry vs circuit breaker: why both, and in which order?
+        </p>
+        <p class="q"><b>Q</b> When do virtual threads help, and when not?</p>
+        <p class="q">
+          <b>Q</b> How do you test concurrent code, not just run it?
+        </p>
+      </div>
+    </div>
+
+    <div class="page"></div>
+    <h2>8 · Limits, and the next step (v3)</h2>
+    <div class="bad">
+      <b>The obvious question:</b> "This is all in memory in one JVM. How would
+      it work across many servers?"
+    </div>
+    <p>
+      <b>Short answer:</b> the engine shows the concurrency rules in-process.
+      Across servers the same rules move into the database: lock rows in id
+      order with <code>SELECT … FOR UPDATE</code>, or use a version column for
+      optimistic updates; enforce idempotency with a unique constraint on the
+      transfer id; write the posting and an outbox row in the same transaction;
+      and let a relay publish outbox rows to the GL. The invariant tests stay
+      the same.
+    </p>
+
+    <h3>Planned v3: a PostgreSQL ledger (ADR-0002)</h3>
+    <table>
+      <tr>
+        <th style="width: 34%">Add</th>
+        <th>Why it matters</th>
+      </tr>
+      <tr>
+        <td>
+          <code>PostgresLedger</code> (pessimistic: row locks in id order)
+        </td>
+        <td>The standard way to serialise money movement in a relational database.</td>
+      </tr>
+      <tr>
+        <td>Optimistic variant (version column, retry)</td>
+        <td>Same pessimistic vs optimistic comparison, now in SQL.</td>
+      </tr>
+      <tr>
+        <td>Unique constraint on transfer id</td>
+        <td>Idempotency that survives restarts and works across servers.</td>
+      </tr>
+      <tr>
+        <td>Transactional outbox table + relay</td>
+        <td>
+          The standard pattern for "update the database and send a message"
+          without losing either.
+        </td>
+      </tr>
+      <tr>
+        <td>Testcontainers in tests</td>
+        <td>
+          The <b>same</b> invariant and stress tests run against a real
+          PostgreSQL.
+        </td>
+      </tr>
+    </table>
+    <p>
+      With this, the project covers both in-memory concurrency <i>and</i>
+      database concurrency. The database tests use Testcontainers, so they need
+      Docker; CI runs them on Ubuntu only.
+    </p>
+
+    <h3>Explore the code</h3>
+    <ul>
+      <li>
+        <code>README.md</code>: the design, the committed results and a
+        Decisions entry per module (what was chosen, the alternative, why).
+      </li>
+      <li>
+        <code>SPEC.md</code>: requirements, design and tasks.
+        <code>docs/adr/</code>: dependency, database and hosting decisions.
+      </li>
+      <li>
+        <code>./mvnw verify</code> runs every test, the coverage gate and the
+        architecture rules; <code>./mvnw -q -pl engine compile exec:java</code>
+        runs the benchmark.
+      </li>
+    </ul>
+    <div class="foot">
+      Settlement Lab is original work built from textbook patterns. Numbers come
+      from the lab's own committed run, never from any production system.
+    </div>
+  </body>
+</html>

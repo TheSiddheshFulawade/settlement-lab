@@ -2,29 +2,92 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "disableBypassPermissionsMode": "disable",
-    "ask": [
+    "blockWritesOutsideWorkingDirectories": true,
+    "allow": [
+      "Bash(mvnw.cmd *)",
+      "Bash(./mvnw *)",
+      "Bash(node --test *)",
+      "Bash(docker ps*)",
+      "Bash(docker version*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
       "Bash(git push *)",
-      "Bash(gh *)",
+      "Bash(git fetch*)",
+      "Bash(git merge origin/*)",
+      "Bash(gh pr *)",
+      "Bash(gh run *)",
+      "Bash(gh repo view*)"
+    ],
+    "ask": [
       "Bash(git reset *)",
-      "Bash(git clean *)"
+      "Bash(git clean *)",
+      "Bash(gh api *)",
+      "Bash(gh secret *)",
+      "Bash(gh repo *)",
+      "Bash(git config *)",
+      "Bash(docker run *)"
     ],
     "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
       "Read(**/.env)",
       "Read(**/.env.*)",
       "Read(**/secrets/**)",
       "Read(**/*.pem)",
       "Read(**/*.key)",
+      "Read(**/*.p12)",
+      "Read(**/*.pfx)",
+      "Read(**/*.jks)",
+      "Read(**/*.keystore)",
+      "Read(**/id_rsa*)",
+      "Read(**/id_ed25519*)",
+      "Read(**/id_ecdsa*)",
+      "Read(**/.git-credentials)",
       "Read(~/.ssh/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.azure/**)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.docker/config.json)",
+      "Read(~/.kube/**)",
       "Read(~/.m2/settings*.xml)",
+      "Read(~/.npmrc)",
+      "Read(~/.netrc)",
+      "Read(~/_netrc)",
+      "Read(~/.claude/.credentials.json)",
       "Edit(**/.env*)",
       "Edit(**/secrets/**)",
+      "Edit(**/*.pem)",
+      "Edit(**/*.key)",
+      "Edit(**/*.p12)",
+      "Edit(**/*.pfx)",
+      "Edit(**/*.jks)",
+      "Edit(~/.ssh/**)",
+      "Edit(~/.aws/**)",
+      "Edit(~/.gitconfig)",
+      "Edit(~/.npmrc)",
+      "Edit(~/.claude/settings.json)",
       "Bash(git push --force*)",
       "Bash(git push -f*)",
       "Bash(gh auth token*)",
-      "Bash(git credential *)"
+      "Bash(git credential *)",
+      "Bash(git clean -x*)",
+      "Bash(git clean -fdx*)",
+      "Bash(git clean -fx*)"
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.mjs\""
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash|PowerShell",

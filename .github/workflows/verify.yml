@@ -11,11 +11,16 @@ permissions:
 jobs:
   verify:
     # Build on both supported JDKs: 21 proves the release-21 rule, 25 is the target runtime.
+    # Windows too: its coarse timers once broke a latency test that passed on Linux (fix/windows-min-latency).
     strategy:
-      fail-fast: false # one JDK failing must not cancel (and hide) the other
+      fail-fast: false # one cell failing must not cancel (and hide) the others
       matrix:
+        os: [ubuntu-24.04, windows-latest]
         java: ['21', '25']
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash # the same ./mvnw and retry loop on both OSes (Git Bash on Windows runners)
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -35,4 +40,18 @@ jobs:
             sleep $((attempt * 15))
           done
           exit 1
-      - run: ./mvnw --batch-mode -C -s .github/maven-ci-settings.xml verify
+      # Ubuntu only: pre-pull the PostgreSQL image the database tests use, retried like the download
+      # above, so a flaky registry does not fail the tests. The tag must equal POSTGRES_IMAGE in
+      # ledger-postgres/src/test/java/.../PostgresTestBase.java (ImageTagSyncTest checks this).
+      - name: Pre-pull the PostgreSQL test image
+        if: runner.os == 'Linux'
+        run: |
+          for attempt in 1 2 3; do
+            docker pull postgres:18.7-alpine3.24 && exit 0
+            echo "Image pull attempt $attempt failed; retrying in $((attempt * 15)) s"
+            sleep $((attempt * 15))
+          done
+          exit 1
+      # -Pdb runs the database tests (Testcontainers, needs Linux Docker) and the module's coverage
+      # gate: Ubuntu only. Windows runners cannot run Linux containers, so they run everything else.
+      - run: ./mvnw --batch-mode -C -s .github/maven-ci-settings.xml verify ${{ runner.os == 'Linux' && '-Pdb' || '' }}

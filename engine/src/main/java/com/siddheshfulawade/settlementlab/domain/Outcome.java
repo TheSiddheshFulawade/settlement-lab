@@ -10,6 +10,11 @@ public enum Outcome {
     REJECTED_INVALID,
     /** The intake queue was full; the transfer was not processed (REQ-LAB-009). */
     QUEUE_FULL,
+    /**
+     * The ledger gave up after repeated optimistic conflicts; nothing was stored. The id is released,
+     * so a retry with the same id is processed fresh (REQ-DB-004a).
+     */
+    REJECTED_CONTENTION,
     /** The same transfer id was already seen (REQ-LAB-008). Counted in metrics. */
     DUPLICATE
 }

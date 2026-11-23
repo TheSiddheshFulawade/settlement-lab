@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 360" width="940" height="360" role="img" aria-labelledby="t d">
+  <title id="t">Why ordered locking cannot deadlock</title>
+  <desc id="d">Two threads move money A to B and B to A at the same time. Locking the source account first can deadlock: each holds one lock and waits for the other. Locking the lower account id first makes both threads queue on A, so one finishes and then the other.</desc>
+  <style>
+    .bg{fill:#0b1220}.panel{fill:#121c2e;stroke:#2a3a55;stroke-width:1.5}
+    .h{font:600 15px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#e6edf6}
+    .s{font:13px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#c3cfdf}
+    .k{font:600 13px ui-monospace,Consolas,"SFMono-Regular",monospace}
+    .t1{fill:#2dd4bf}.t2{fill:#a78bfa}.ok{fill:#4ade80}.bad{fill:#f87171}.mut{fill:#93a4bd}
+    .st{animation:show 10s infinite both}
+    .s2{animation-delay:0s}.s3{animation-name:show3}.s4{animation-name:show4}
+    @keyframes show{0%{opacity:.12}8%,100%{opacity:1}}
+    @keyframes show3{0%,30%{opacity:.12}38%,100%{opacity:1}}
+    @keyframes show4{0%,60%{opacity:.12}68%,100%{opacity:1}}
+    @media (prefers-reduced-motion:reduce){.st{animation:none}}
+  </style>
+  <rect class="bg" width="940" height="360" rx="14"/>
+  <text class="h" x="24" y="34">Two transfers at the same instant: T1 moves A → B, T2 moves B → A</text>
+
+  <rect class="panel" x="20" y="54" width="440" height="286" rx="10"/>
+  <text class="h" x="40" y="84">Naive: lock the source account first</text>
+  <g class="st s2"><text class="k t1" x="40" y="124">T1</text><text class="s" x="72" y="124">locks A</text><text class="k t2" x="240" y="124">T2</text><text class="s" x="272" y="124">locks B</text></g>
+  <g class="st s3"><text class="k t1" x="40" y="164">T1</text><text class="s" x="72" y="164">holds A, waits for B …</text><text class="k t2" x="240" y="164">T2</text><text class="s" x="272" y="164">holds B, waits for A …</text></g>
+  <g class="st s4">
+    <rect x="40" y="190" width="400" height="56" rx="8" fill="#3a1518" stroke="#7f1d1d"/>
+    <text class="k bad" x="60" y="214">DEADLOCK</text><text class="s" x="60" y="234">Each waits for the other forever. Money stuck, threads stuck.</text>
+  </g>
+  <text class="s mut" x="40" y="290">A cycle of waits: T1 → B (held by T2) → A (held by T1)</text>
+  <text class="s mut" x="40" y="312">This is how real payment systems freeze under load.</text>
+
+  <rect class="panel" x="480" y="54" width="440" height="286" rx="10" stroke="#1f5c4f"/>
+  <text class="h" x="500" y="84">Settlement Lab: lock the lower id first</text>
+  <g class="st s2"><text class="k t1" x="500" y="124">T1</text><text class="s" x="532" y="124">locks A</text><text class="k t2" x="700" y="124">T2</text><text class="s" x="732" y="124">wants A → waits,</text><text class="s" x="732" y="142">holding nothing</text></g>
+  <g class="st s3"><text class="k t1" x="500" y="174">T1</text><text class="s" x="532" y="174">locks B, moves money, releases both</text></g>
+  <g class="st s4">
+    <text class="k t2" x="500" y="206">T2</text><text class="s" x="532" y="206">locks A, then B, moves money</text>
+    <rect x="500" y="222" width="400" height="44" rx="8" fill="#0f2a24" stroke="#1f5c4f"/>
+    <text class="k ok" x="520" y="249">✓ BOTH DONE · balances correct</text>
+  </g>
+  <text class="s mut" x="500" y="290">Every thread asks for locks in the same order,</text>
+  <text class="s mut" x="500" y="312">so a cycle of waits is impossible. No timeout needed.</text>
+</svg>

@@ -16,6 +16,22 @@ money, never apply the same transfer twice even when it arrives twice, stay resp
 downstream general ledger (GL) is slow or down, and push back instead of falling over when load
 exceeds capacity. Then: how do two locking strategies and two threading models compare?
 
+## How it works, in three pictures
+
+**One transfer, end to end.** A duplicate (red) is answered at the idempotency store and never applied twice.
+
+![One transfer through Settlement Lab](docs/explainer/flow.svg)
+
+**Why ordered locking cannot deadlock.**
+
+![Deadlock versus ordered locking](docs/explainer/locking.svg)
+
+**When the general ledger is down:** fail fast, keep the posting in the outbox, resend later.
+
+![Circuit breaker states](docs/explainer/breaker.svg)
+
+A 9-page explainer with the full low-level design is in [docs/explainer/Settlement-Lab-LLD.pdf](docs/explainer/Settlement-Lab-LLD.pdf).
+
 ## Design
 
 | Package | What it holds | May import |
@@ -104,6 +120,16 @@ What the numbers say (and what they do not):
 - **Every invariant passed in every cell**: total conserved, no negative balance, each transfer
   posted at most once, postings explain the balances, postings match accepted transfers, and the
   GL holds exactly the ledger's postings.
+
+### Database results
+
+`results/results-db.md` (pessimistic and optimistic PostgreSQL cells) is produced locally, not in CI, with
+the command below (needs Docker). It will be committed after a local run; Docker is currently unavailable,
+so there are no database numbers yet.
+
+```bash
+mvnw.cmd -Pdb -pl ledger-postgres -am test-compile exec:java -Dexec.classpathScope=test -Dexec.mainClass=com.siddheshfulawade.settlementlab.postgres.DbResultsMain
+```
 
 ## How to run
 
@@ -240,6 +266,21 @@ framework-free.
 - **Found by measuring:** the first run exposed the outbox bottleneck and GL latency on worker
   threads (see L-06). Both fixed test-first before any number was committed.
 
+### README and committed results (L-09)
+
+- **Chosen:** commit one real run (`results/results.md` and `.json`) with the machine, JDK and
+  workload named, and have the README quote it. **Alternative:** commit only the code and let
+  readers run it; or quote numbers in the README without the raw output. **Why:** every claim in
+  the write-up can be checked against the exact output it came from, and a later run (JDK 25, more
+  cores) has a fixed baseline to compare with.
+- **Chosen:** report only what one run supports: the large, consistent effect (locking beat CAS in
+  all six pairs) as a finding, the small ones (platform vs virtual throughput) as a direction,
+  and causes the run did not isolate as "most likely". **Alternative:** several runs with
+  confidence intervals before publishing. **Why:** honest within v1's scope; repeated runs are
+  listed as the next measurement rather than implied.
+- **Chosen:** the run is on JDK 21, not the JDK 25 target, and says so. **Why:** JDK 25 was not
+  available in that container, and `release 21` makes a 21 run valid; a JDK 25 run is still owed.
+
 ### Modules for v2 (V2-01)
 
 - **Chosen:** a Maven parent with two modules, `engine` (all of v1, unchanged) and `api` (Spring
@@ -288,3 +329,134 @@ framework-free.
   thread per subscriber writing to the connection; a full buffer drops that subscriber.
   **Alternative:** write to clients from the engine's worker. **Why:** a slow or vanished client
   must never cost a worker any time (REQ-API-005); the worst it can cost is its own buffer.
+
+### PostgreSQL module and schema (V3-01)
+
+- **Chosen:** a separate `ledger-postgres` module that depends on `engine`, using plain JDBC.
+  **Alternative:** JPA/Hibernate, or JDBC inside the engine. **Why:** the engine keeps importing
+  only `java.*`, and every statement and lock stays visible in the code, which is what the v3
+  measurements are about.
+- **Chosen:** money as `BIGINT` minor units with `CHECK (balance >= 0)`, the transfer id as the
+  `transfer` primary key, `posting.transfer_id` `UNIQUE`, and an outbox foreign key to its posting.
+  **Alternative:** enforce these in Java only. **Why:** the constraints are the last line of
+  defence. A buggy statement, or a second server, fails loudly instead of committing a broken ledger.
+- **Chosen:** Flyway versioned migrations, with V1's checksum pinned in a test. **Alternative:**
+  Liquibase, or a hand-run `schema.sql`. **Why:** plain SQL files and a checksum that refuses an
+  edited migration (REQ-DB-011). Production keeps `clean` disabled.
+- **Chosen:** Testcontainers with a pinned `postgres` image, run behind a `db` profile on the
+  Ubuntu CI jobs only. Without Docker the tests fail, not skip. **Alternative:** H2 or an embedded
+  PostgreSQL on every OS. **Why:** row locks, `SKIP LOCKED` and constraint errors must be tested on
+  the real database, and Windows runners cannot run Linux containers. Windows still runs the
+  architecture and image-sync tests, and the module's coverage gate is skipped there instead of
+  passing on no data.
+
+### Shared ledger suites (V3-02)
+
+- **Chosen:** the ledger property and stress suites became abstract contract classes
+  (`LedgerPropertiesContract`, `LedgerStressContract`). Each ledger has a small subclass that only
+  builds its ledger, and the engine publishes its test classes as a Maven test-jar that
+  `ledger-postgres` uses in test scope. **Alternative:** copy the suites into the new module; a shared
+  `testFixtures` module (`java-test-fixtures` is Gradle-only, so in Maven it would be an extra
+  module); a `ServiceLoader` or registry of ledgers; the old `LedgerKind` enum. **Why:** every ledger
+  must pass the same proofs, and copies drift apart. An enum is a closed list in one module, and the
+  engine cannot name `PostgresLedger` (the dependency points the other way). An abstract class is
+  open to any module, needs no new module and no runtime machinery, and costs one Maven plugin goal.
+  The price: test dependencies are not transitive, so `ledger-postgres` declares jqwik and
+  Awaitility again.
+
+### PostgreSQL pessimistic ledger (V3-03)
+
+- **Chosen:** row locks, `SELECT ... WHERE id IN (?, ?) ORDER BY id FOR UPDATE`, in ascending id
+  order, at `READ COMMITTED`, in plain JDBC, with `SET LOCAL lock_timeout` and `statement_timeout`
+  per transaction. A timeout rolls back and throws `LedgerDatabaseException`; it is not an `Outcome`,
+  so the same id can be retried. **Alternatives:** `SERIALIZABLE` with retry on `40001`; advisory
+  locks; one `UPDATE ... WHERE balance >= amount` guard instead of reading first; JPA `@Version`.
+  **Why:** ordered row locks make deadlock impossible (waits only climb) and a locked read always
+  returns the latest committed balance, so `READ COMMITTED` is enough and nothing needs a retry loop.
+  `SERIALIZABLE` adds retries for no extra safety here. Advisory locks lock names we invent, not the
+  rows, so the database cannot check them. A guarded single `UPDATE` covers one account, but a
+  transfer must also check, move and record two accounts, a posting and an outcome as one step.
+  `@Version` is optimistic locking (V3-05) and hides the SQL. `SET LOCAL` keeps the limits off pooled
+  connections; the `CHECK (balance >= 0)` stays as the last line of defence.
+
+### Idempotency by database key (V3-04)
+
+- **Chosen:** insert-first claim on the `transfer` primary key: `INSERT ... ON CONFLICT (id) DO
+  NOTHING`, then lock, check, move money and record the outcome in the same transaction. Every
+  outcome that reaches the database is stored on the id's row, rejections included (`REJECTED_FUNDS`,
+  `REJECTED_INVALID`), and replayed for the same id. A new attempt needs a new id; only attempts that
+  store nothing (`QUEUE_FULL`, `REJECTED_CONTENTION`, a rolled-back error) leave the id free.
+  **Alternatives:** `SELECT` then `INSERT`; `SERIALIZABLE`; a Redis or in-memory key store; advisory
+  locks on the id; storing a hash of the request. **Why:** a second insert of the same key waits for
+  the first transaction, so concurrent duplicates serialise on the key with no code of ours, and the
+  claim, the money and the outcome commit or roll back together. `SELECT` then `INSERT` leaves a gap
+  where two callers both see "not found". `SERIALIZABLE` would add `40001` retries for no extra safety.
+  An in-memory store is forgotten on restart and not shared by a second server, and an external store
+  can disagree with the database after a crash. Advisory locks lock a name we invent, not a row the
+  database can check. A request hash would catch a reused id with different data, but it adds a column,
+  an error path and a choice of fields; the id alone is the key, and a caller such as the API can
+  compare payloads itself. Known limit: a duplicate waiting behind a stuck original gives up at
+  `lock_timeout` and may be retried safely.
+
+### Optimistic PostgreSQL ledger (V3-05)
+
+- **Chosen:** a `version` column on `account` and a conditional write, `UPDATE ... SET balance = ?,
+  version = version + 1 WHERE id = ? AND version = ?`, one per account, lower id first. The read takes
+  no lock. Zero rows changed means someone wrote first: the whole attempt rolls back (claim included)
+  and retries after a full-jitter back-off (a random sleep from 0 to `min(50 ms, 1 ms * 2^(n-1))`),
+  at most 10 attempts. Then the answer is `REJECTED_CONTENTION`, which stores nothing, so the id stays
+  free: the engine releases its in-memory claim and the API answers `503` with `Retry-After`, and the
+  client retries with the same id. **Alternatives:** `SERIALIZABLE` with retry on `40001`; unbounded
+  retries; a fixed back-off; falling back to pessimistic locking after N conflicts. **Why:** the
+  version check refuses any write based on a stale read, so `READ COMMITTED` is enough and no lock is
+  held while the transfer is being worked out; under low contention that is cheaper than queueing on
+  row locks. Ascending-order updates keep the short row locks deadlock-free. `SERIALIZABLE` makes the
+  database detect conflicts for us but aborts more broadly and hides which statement lost. Unbounded
+  retries can hold a worker forever on a hot account and add load to it, so a cap turns "too busy"
+  into a clear, retryable answer. A fixed back-off makes colliding transfers wake together and
+  collide again; jitter spreads them. Falling back to pessimistic mid-flight would mix two protocols
+  in one ledger and blur what the benchmark measures; the two modes are compared side by side in V3-07
+  instead. `@Version` (JPA) is the same idea with the SQL hidden.
+
+### Transactional outbox and lease-based relay (V3-06)
+
+- **Chosen:** the posting and its `outbox` row are inserted in the same transaction as the transfer
+  (`PostgresLedger.postWithOutbox`), so both commit or neither does. A relay (`OutboxRelay`) claims due
+  rows with `SELECT ... FOR UPDATE SKIP LOCKED`, writes a lease (`next_attempt_at = now() + lease`) and
+  COMMITs; then it publishes with no transaction and no connection held; then it deletes each row the
+  GL accepted, or adds 1 to `attempts` and pushes `next_attempt_at` back by one lease if the publish
+  failed. The GL is keyed by transfer id, so a re-send (crash, lost ack, expired lease) answers
+  `ALREADY_RECORDED`: at-least-once delivery, exactly-once effect. **Alternatives:** publish to the GL
+  inside the posting transaction; change data capture from the write-ahead log (e.g. Debezium, logical
+  decoding); `LISTEN/NOTIFY` as the queue; holding the row lock for the whole GL call; a message broker
+  with XA (two-phase commit). **Why:** writing to the database and calling the GL are two writes to two
+  systems, and a crash between them loses or invents a message; putting the message in the same
+  transaction removes the gap. Publishing inside the transaction would pin a pool connection and row
+  locks over a network call, so one slow GL could starve the ledger (REQ-DB-009), and a rollback after a
+  successful call would leave a GL entry for nothing. Holding the lock during the call has the same
+  cost with no gain, since the lease already keeps other relays away. Change data capture avoids
+  polling but adds a separate service to run and operate, which is too much for this project;
+  `LISTEN/NOTIFY` messages are lost if nobody is listening, so a poll would still be needed. XA needs a
+  transaction manager and a GL that supports it, and a stuck coordinator holds locks. The cost of the
+  lease is that it is a time limit: it must be longer than the slowest batch (retries included), or
+  duplicates appear, which are harmless but wasted calls. The in-memory `OutboxPublisher` of v1 stays
+  for the in-memory ledgers; it loses its queue on a crash, the database outbox does not.
+
+### Database runner cells (V3-07)
+
+- **Chosen:** two small interfaces in the engine's `runner` package, `LedgerFactory` (name, build a fresh
+  ledger from opening balances, optionally a `GlDelivery`) and `GlDelivery` (drain, outbox peak, close).
+  `ScenarioRunner` has one general `run(factory, ...)` path; the in-memory cells wrap `LedgerType` in a
+  factory. The database implementation (`PostgresLedgerFactory`) and the driver (`DbResultsMain`) live in
+  `ledger-postgres` **test** sources, write separate `results-db.md` and `.json`, and run locally only. When
+  a delivery is present the engine gets `PostingPublisher.NONE`, because the outbox relay delivers.
+  **Alternatives:** the engine depends on JDBC and builds the ledger itself; a separate benchmark module
+  using JMH; running the cells in CI. **Why:** the engine promises `java.*` only and ArchUnit enforces it,
+  and the postgres module already depends on the engine, so importing it back would be a cycle; inverting
+  the dependency keeps one runner code path and the same invariant checks for every cell. Test sources keep
+  Testcontainers and Hikari out of the shipped jar. A JMH module is the right tool for micro-benchmarks, but
+  this is a closed-loop scenario run with invariant checks, and it would add a dependency and a module for
+  the same question. CI runs are slow, noisy on shared runners and not comparable between runs, so the
+  correctness test (`DbScenarioRunTest`, tiny cells) runs in CI and the measurement runs locally with the
+  machine written next to the numbers. The cost: the database numbers are one run on one machine, with no
+  warm-up pass, and are not reproducible by a reader without Docker.

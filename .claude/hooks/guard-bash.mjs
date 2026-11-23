@@ -3,6 +3,7 @@
 // Policy: CLAUDE.md "Agent safety". Pattern rules are a safety net, not a sandbox: they read
 // the command text, so an obfuscated command can still slip past. Deny wins over ask.
 import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import { readInput, block, allow, ask, ROOT } from './lib.mjs';
 
 const input = await readInput();
@@ -15,14 +16,24 @@ const SAFE_DELETE = /^(\.\/)?(apps\/(web|api)\/)?(node_modules|dist|target|cover
 // ---------------------------------------------------------------------------------------------
 // 1. Repository rules (unchanged).
 const repoRules = [
-  [/\bgit\s+push\b.*(\s--force(-with-lease)?\b|\s-f\b)/, 'force push is not allowed'],
-  [/\bgit\s+push\b(?!.*--dry-run)[^;&|\n]*[\s:](refs\/heads\/)?(main|master|develop)(?=\s|$|;|&|\|)/, 'direct push to main or develop is not allowed; push a work branch and open a pull request (/ship)'],
+  // Any flag cluster with f (-f, -uf), --force*, or a +refspec (git push origin +feat).
+  [/\bgit\s+push\b[^;&|\n]*(\s--force(-with-lease|-if-includes)?\b|\s-[a-zA-Z]*f[a-zA-Z]*\b|\s\+[^\s:])/, 'force push is not allowed'],
+  [/\bgit\s+push\b[^;&|\n]*(\s(--delete|-d)\b[^;&|\n]*\s|\s\+?:)(refs\/heads\/)?(main|master)(?=\s|$|;|&|\|)/, 'deleting main on the remote is not allowed'],
+  // --dry-run counts only inside the same push command, not in a later "echo --dry-run" or "# --dry-run".
+  [/\bgit\s+push\b(?![^;&|\n#]*--dry-run)[^;&|\n]*[\s:]\+?["']?(refs\/heads\/)?(main|master)["']?(?=\s|$|;|&|\|)/, 'direct push to main is not allowed; push a work branch and open a pull request (/ship)'],
+  [/\bgit\s+push\b[^;&|\n]*\s--(all|mirror)\b/, 'pushing every branch (--all, --mirror) is not allowed; push one work branch'],
+  [/\bgh\s+repo\s+delete\b/, 'deleting a GitHub repository is not allowed'],
+  [/\bgh\s+api\b(?=[^;&|\n]*(-X\s*|--method[\s=]+)["']?(PUT|PATCH|DELETE)\b)(?=[^;&|\n]*\/(protection|rulesets)\b)/i, 'changing branch protection or rulesets through the API is not allowed'],
+  [/\bgh\s+workflow\s+disable\b/, 'disabling a GitHub Actions workflow is not allowed'],
+  [/\bgit\s+config\b(?=[^;&|\n]*\s--(global|system)\b)(?=[^;&|\n]*\b(core\.hooksPath|credential)\b)/i, 'changing global git hooks or credential settings is not allowed'],
+  [/\b(curl|wget|iwr|Invoke-WebRequest)\b(?=[^;&|\n]*\s(-[a-zA-Z]*[oO]|--output(-document)?|-OutFile)\b)(?=[^;&|\n]*\.(exe|msi|ps1|bat|cmd|sh|vbs)\b)/i, 'downloading executables or scripts is not allowed'],
+  [/\bdocker\s+(container\s+)?run\b(?=[^;&|\n]*(\s--privileged\b|\s(-v|--volume)[\s=]+["']?(\/|[a-zA-Z]:[\\\/]?):))/i, 'privileged containers and host-root mounts are not allowed'],
   [/\bgh\s+pr\s+merge\b[^;&|\n]*--admin\b/, 'bypassing branch protection with --admin is not allowed'],
   [/--no-verify\b/, 'skipping git hooks (--no-verify) is not allowed'],
   [/\bgit\s+(commit|merge|rebase)\b.*\s-c\s+commit\.gpgsign=false/, 'disabling commit signing is not allowed'],
   [/\b(curl|wget|iwr|Invoke-WebRequest)\b[^|]*\|\s*(ba|z)?sh\b/, 'piping a download into a shell is not allowed'],
   [/\b(iex|Invoke-Expression)\b.*\b(iwr|Invoke-WebRequest|DownloadString)\b/, 'executing downloaded scripts is not allowed'],
-  [/(^|[\s;&|])(cat|type|Get-Content|gc|less|more|head|tail|grep|findstr|Select-String)\s+[^|;&]*\.env(?!\.example\b)(\.[\w-]+)?(?![\w.])/i, 'reading .env files is not allowed'],
+  [/(^|[\s;&|])(cat|type|Get-Content|gc|less|more|head|tail|grep|findstr|Select-String|git\s+(diff|show|log|blame|grep))\s+[^|;&]*\.env(?!\.example\b)(\.[\w-]+)?(?![\w.])/i, 'reading .env files is not allowed'],
   [/\bgit\s+add\b[^;&|\n]*docs[\\/]private/,'docs/private holds personal documents and must never be committed'],
   [/\bgit\s+add\s+(-f|--force)\b/, 'force-adding ignored files is not allowed'],
 ];
@@ -54,14 +65,19 @@ const neverRules = [
   [/\b(diskpart|Format-Volume|Clear-Disk|Initialize-Disk|Remove-Partition|Set-Partition|mkfs(\.\w+)?|fdisk|sfdisk)\b/i, 'disk partitioning or formatting is not allowed'],
   [/\bdd\b[^;&|]*\bof=\/dev\//, 'writing raw devices is not allowed'],
   [/\bvssadmin\b.*\b(delete|resize)\b|\bwmic\b.*\bshadowcopy\b.*\bdelete\b|\bwbadmin\s+delete\b|Win32_ShadowCopy\b.*\b(Delete|Remove)/i, 'deleting backups or shadow copies is not allowed'],
-  [/\bcipher(\.exe)?\s+\/w\b|\b(shred|sdelete|wipe)\b/i, 'secure-erase tools are not allowed'],
+  // The tools themselves, in command position only: "wipe" or "erase" in a message, or a grep for a tool name, is fine.
+  [/(^|[;&|(]\s*|\b(sudo|exec|xargs)\s+)(cipher(\.exe)?\s+\/w\b|(shred|sdelete(64)?)(\.exe)?(?=\s|$))/i, 'secure-erase tools are not allowed'],
   [/:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, 'fork bombs are not allowed'],
   [/\bgit\s+clean\b[^;&|]*\s-[a-zA-Z]*[xX]/, 'git clean -x/-X deletes ignored files, including docs/private and local .env files'],
   // Credentials
   [/\bgh\s+auth\s+token\b|\bgh\s+auth\s+status\b.*(--show-token|\s-t\b)/i, 'printing the GitHub token is not allowed'],
   [/\bgit\s+credential(-\w+)?\s+(fill|get)\b/i, 'reading stored git credentials is not allowed'],
   [/\bcmdkey\s+\/list\b|\bvaultcmd\b|\bmimikatz\b|\bsekurlsa\b|\bprocdump\b.*\blsass\b|\bcomsvcs(\.dll)?\b.*\bMiniDump\b|\breg(\.exe)?\s+save\s+hklm\\(sam|system|security)\b/i, 'dumping system credentials is not allowed'],
-  [/\$(\{|env:)?[A-Za-z_]*(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY)[A-Za-z_]*\}?|%[A-Za-z_]*(TOKEN|SECRET|PASSWORD|API_?KEY)[A-Za-z_]*%/i, 'expanding a secret environment variable is not allowed'],
+  // POSIX: case-sensitive, because environment secrets are upper case by convention. Lower-case names such as
+  // a JS template placeholder `${tokens}` or a shell loop variable are not env secrets (false positive, day 4).
+  [/\$\{?[A-Z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY)[A-Z0-9_]*\}?/, 'expanding a secret environment variable is not allowed'],
+  // Windows: environment variable names are case-insensitive, so any case is blocked.
+  [/\$env:[A-Za-z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY)|%[A-Za-z0-9_]*(TOKEN|SECRET|PASSWORD|API_?KEY)[A-Za-z0-9_]*%/i, 'expanding a secret environment variable is not allowed'],
   [CRED_PATH, 'credential files and private keys must not be read, copied or changed'],
   // Malware techniques
   [/\b(powershell|pwsh)(\.exe)?\b.*\s-(e|ec|en|enc|enco|encodedcommand)\s+[A-Za-z0-9+\/=]{16,}/i, 'encoded PowerShell commands are not allowed'],
@@ -138,19 +154,65 @@ const askRules = [
   [/\bfind\b[^;&|]*\s-delete\b|\bfind\b[^;&|]*-exec\s+rm\b|\bxargs\b[^;&|]*\brm\b/i, 'bulk-deletes files'],
   [/(^|[;&|]\s*)(printenv|env|set|Get-ChildItem\s+env:|gci\s+env:|dir\s+env:|ls\s+env:)\s*($|[;&|])/i, 'prints every environment variable, which can include tokens'],
   [/\bgit\s+commit\b[^;&|]*--amend\b/i, 'rewrites the last commit (--amend)'],
+  [/\bgit\s+config\b[^;&|\n]*\s--(global|system)\b/i, 'changes global or system git configuration'],
 ];
 
-// Local commits run without a prompt (ADR-0003), so they must land on a work branch:
-// main and develop change only through pull requests.
-if (/\bgit\s+commit\b/.test(c)) {
-  let branch = '';
+// Local commits and pushes run without a prompt, so they must come from a work branch: main changes
+// only through pull requests. The branch is read in the directory the command runs in (the hook's
+// cwd, then `cd <dir> &&` or `git -C <dir>`), so a worktree is judged on its own branch. When the
+// directory cannot be known for sure (subshells, pushd/popd, `cd -`, several cd's), every candidate
+// directory is checked and any one on main blocks; GIT_DIR, --git-dir and --work-tree always block.
+const PROTECTED_BRANCHES = ['main', 'master'];
+const GIT_COMMIT = /\bgit\s+((-C\s+("[^"]*"|'[^']*'|\S+)|-c\s+\S+|--[\w-]+(=("[^"]*"|'[^']*'|\S+))?)\s+)*commit\b/;
+const GIT_PUSH = /\bgit\s+((-C\s+("[^"]*"|'[^']*'|\S+)|-c\s+\S+|--[\w-]+(=("[^"]*"|'[^']*'|\S+))?)\s+)*push\b([^;&|]*)/;
+// Newlines separate commands too: keep them as ";" so a second cd on its own line is seen.
+const seq = cmd.replace(/\r?\n/g, ' ; ').replace(/\s+/g, ' ').trim();
+const unquote = (s) => s.replace(/^["']|["']$/g, '');
+const toNativePath = (p) => (process.platform === 'win32' ? p.replace(/^\/([a-zA-Z])(?=\/|$)/, '$1:') : p);
+const applyDashC = (dir, m) =>
+  [...m[0].matchAll(/-C\s+("[^"]*"|'[^']*'|\S+)/g)].reduce((d, g) => resolve(d, toNativePath(unquote(g[1]))), dir);
+
+/** Directories the git command in match m may run in: one when the prefix is plain, every candidate otherwise. */
+function gitDirs(m) {
+  const base = toNativePath(String(input?.cwd || ROOT));
+  const prefix = seq.slice(0, m.index);
+  const cds = [...prefix.matchAll(/(?:^|[;&|(]\s*)(?:cd|pushd|Set-Location|sl)\s+(?:\/d\s+)?("[^"]*"|'[^']*'|[^\s;&|)]+)/gi)].map(
+    (x) => resolve(base, toNativePath(unquote(x[1]))),
+  );
+  const ambiguous = cds.length > 1 || /[()]|\b(pushd|popd)\b|\bcd\s+-(\s|$)/i.test(prefix);
+  if (!ambiguous) return [applyDashC(cds.at(-1) ?? base, m)];
+  return [...new Set([base, ROOT, ...cds].flatMap((d) => [d, applyDashC(d, m)]))];
+}
+
+function branchIn(dir) {
   try {
-    branch = execFileSync('git', ['branch', '--show-current'], { cwd: ROOT, encoding: 'utf8' }).trim();
+    return execFileSync('git', ['branch', '--show-current'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
-    // Not a git checkout or git unavailable: nothing to protect here.
+    return null; // not a git checkout, or git unavailable
   }
-  if (['main', 'master', 'develop'].includes(branch)) {
-    block(`committing directly on ${branch} is not allowed; create a work branch from develop first.\nCommand: ${cmd}`);
+}
+
+/** The protected branch the git command in match m would act on, or undefined. */
+function protectedBranchFor(m) {
+  if (/\bGIT_(DIR|WORK_TREE)=|--git-dir\b|--work-tree\b/.test(seq)) return 'an unknown branch (GIT_DIR, --git-dir or --work-tree)';
+  // Fall back to the hook's checkout when no candidate directory can be read.
+  const branches = gitDirs(m).map(branchIn).filter((b) => b !== null);
+  return (branches.length ? branches : [branchIn(ROOT) ?? '']).find((b) => PROTECTED_BRANCHES.includes(b));
+}
+
+const commit = GIT_COMMIT.exec(seq);
+if (commit) {
+  const branch = protectedBranchFor(commit);
+  if (branch) block(`committing directly on ${branch} is not allowed; create a work branch from main first.\nCommand: ${cmd}`);
+}
+
+// `git push`, `git push origin` and `git push origin HEAD` push the current branch: judge it like a commit.
+const push = GIT_PUSH.exec(seq);
+if (push) {
+  const refspecs = push.at(-1).trim().split(/\s+/).filter((t) => t && !t.startsWith('-')).slice(1);
+  if (refspecs.length === 0 || refspecs.some((r) => /^["']?HEAD["']?$/.test(r))) {
+    const branch = protectedBranchFor(push);
+    if (branch) block(`pushing the current branch while it is ${branch} is not allowed; push a work branch.\nCommand: ${cmd}`);
   }
 }
 

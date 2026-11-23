@@ -34,5 +34,8 @@ secrets/
 Thumbs.db
 desktop.ini
 
+# Python bytecode (docs/explainer/build-pdf.py)
+__pycache__/
+
 # jqwik test state
 .jqwik-database
