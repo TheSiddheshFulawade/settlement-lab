@@ -3,6 +3,7 @@
 // Policy: CLAUDE.md "Agent safety". Pattern rules are a safety net, not a sandbox: they read
 // the command text, so an obfuscated command can still slip past. Deny wins over ask.
 import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import { readInput, block, allow, ask, ROOT } from './lib.mjs';
 
 const input = await readInput();
@@ -16,7 +17,14 @@ const SAFE_DELETE = /^(\.\/)?(apps\/(web|api)\/)?(node_modules|dist|target|cover
 // 1. Repository rules (unchanged).
 const repoRules = [
   [/\bgit\s+push\b.*(\s--force(-with-lease)?\b|\s-f\b)/, 'force push is not allowed'],
-  [/\bgit\s+push\b(?!.*--dry-run)[^;&|\n]*[\s:](refs\/heads\/)?(main|master|develop)(?=\s|$|;|&|\|)/, 'direct push to main or develop is not allowed; push a work branch and open a pull request (/ship)'],
+  [/\bgit\s+push\b[^;&|\n]*(\s(--delete|-d)\b[^;&|\n]*\s|\s\+?:)(refs\/heads\/)?(main|master)(?=\s|$|;|&|\|)/, 'deleting main on the remote is not allowed'],
+  [/\bgit\s+push\b(?!.*--dry-run)[^;&|\n]*[\s:](refs\/heads\/)?(main|master)(?=\s|$|;|&|\|)/, 'direct push to main is not allowed; push a work branch and open a pull request (/ship)'],
+  [/\bgh\s+repo\s+delete\b/, 'deleting a GitHub repository is not allowed'],
+  [/\bgh\s+api\b(?=[^;&|\n]*(-X\s*|--method[\s=]+)["']?(PUT|PATCH|DELETE)\b)(?=[^;&|\n]*\/(protection|rulesets)\b)/i, 'changing branch protection or rulesets through the API is not allowed'],
+  [/\bgh\s+workflow\s+disable\b/, 'disabling a GitHub Actions workflow is not allowed'],
+  [/\bgit\s+config\b(?=[^;&|\n]*\s--(global|system)\b)(?=[^;&|\n]*\b(core\.hooksPath|credential)\b)/i, 'changing global git hooks or credential settings is not allowed'],
+  [/\b(curl|wget|iwr|Invoke-WebRequest)\b(?=[^;&|\n]*\s(-[a-zA-Z]*[oO]|--output(-document)?|-OutFile)\b)(?=[^;&|\n]*\.(exe|msi|ps1|bat|cmd|sh|vbs)\b)/i, 'downloading executables or scripts is not allowed'],
+  [/\bdocker\s+(container\s+)?run\b(?=[^;&|\n]*(\s--privileged\b|\s(-v|--volume)[\s=]+["']?(\/|[a-zA-Z]:[\\\/]?):))/i, 'privileged containers and host-root mounts are not allowed'],
   [/\bgh\s+pr\s+merge\b[^;&|\n]*--admin\b/, 'bypassing branch protection with --admin is not allowed'],
   [/--no-verify\b/, 'skipping git hooks (--no-verify) is not allowed'],
   [/\bgit\s+(commit|merge|rebase)\b.*\s-c\s+commit\.gpgsign=false/, 'disabling commit signing is not allowed'],
@@ -54,7 +62,8 @@ const neverRules = [
   [/\b(diskpart|Format-Volume|Clear-Disk|Initialize-Disk|Remove-Partition|Set-Partition|mkfs(\.\w+)?|fdisk|sfdisk)\b/i, 'disk partitioning or formatting is not allowed'],
   [/\bdd\b[^;&|]*\bof=\/dev\//, 'writing raw devices is not allowed'],
   [/\bvssadmin\b.*\b(delete|resize)\b|\bwmic\b.*\bshadowcopy\b.*\bdelete\b|\bwbadmin\s+delete\b|Win32_ShadowCopy\b.*\b(Delete|Remove)/i, 'deleting backups or shadow copies is not allowed'],
-  [/\bcipher(\.exe)?\s+\/w\b|\b(shred|sdelete|wipe)\b/i, 'secure-erase tools are not allowed'],
+  // The tools themselves, in command position only: "wipe" or "erase" in a message, or a grep for a tool name, is fine.
+  [/(^|[;&|(]\s*|\b(sudo|exec|xargs)\s+)(cipher(\.exe)?\s+\/w\b|(shred|sdelete(64)?)(\.exe)?(?=\s|$))/i, 'secure-erase tools are not allowed'],
   [/:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, 'fork bombs are not allowed'],
   [/\bgit\s+clean\b[^;&|]*\s-[a-zA-Z]*[xX]/, 'git clean -x/-X deletes ignored files, including docs/private and local .env files'],
   // Credentials
@@ -142,19 +151,39 @@ const askRules = [
   [/\bfind\b[^;&|]*\s-delete\b|\bfind\b[^;&|]*-exec\s+rm\b|\bxargs\b[^;&|]*\brm\b/i, 'bulk-deletes files'],
   [/(^|[;&|]\s*)(printenv|env|set|Get-ChildItem\s+env:|gci\s+env:|dir\s+env:|ls\s+env:)\s*($|[;&|])/i, 'prints every environment variable, which can include tokens'],
   [/\bgit\s+commit\b[^;&|]*--amend\b/i, 'rewrites the last commit (--amend)'],
+  [/\bgit\s+config\b[^;&|\n]*\s--(global|system)\b/i, 'changes global or system git configuration'],
 ];
 
-// Local commits run without a prompt (ADR-0003), so they must land on a work branch:
-// main and develop change only through pull requests.
-if (/\bgit\s+commit\b/.test(c)) {
-  let branch = '';
+// Local commits run without a prompt, so they must land on a work branch: main changes only
+// through pull requests. The branch is read in the directory the command runs in (the hook's
+// `cwd`, then `cd <dir> &&` or `git -C <dir>`), so a worktree is judged on its own branch.
+const PROTECTED_BRANCHES = ['main', 'master'];
+const GIT_COMMIT = /\bgit\s+((-C\s+("[^"]*"|'[^']*'|\S+)|-c\s+\S+)\s+)*commit\b/;
+const unquote = (s) => s.replace(/^["']|["']$/g, '');
+const toNativePath = (p) => (process.platform === 'win32' ? p.replace(/^\/([a-zA-Z])(?=\/|$)/, '$1:') : p);
+
+function commitDir(m) {
+  let dir = toNativePath(String(input?.cwd || ROOT));
+  const cds = [...c.slice(0, m.index).matchAll(/(?:^|[;&|(]\s*)(?:cd|pushd|Set-Location|sl)\s+(?:\/d\s+)?("[^"]*"|'[^']*'|[^\s;&|]+)/gi)];
+  if (cds.length) dir = resolve(dir, toNativePath(unquote(cds.at(-1)[1])));
+  for (const g of m[0].matchAll(/-C\s+("[^"]*"|'[^']*'|\S+)/g)) dir = resolve(dir, toNativePath(unquote(g[1])));
+  return dir;
+}
+
+function branchIn(dir) {
   try {
-    branch = execFileSync('git', ['branch', '--show-current'], { cwd: ROOT, encoding: 'utf8' }).trim();
+    return execFileSync('git', ['branch', '--show-current'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
-    // Not a git checkout or git unavailable: nothing to protect here.
+    return null; // not a git checkout, or git unavailable
   }
-  if (['main', 'master', 'develop'].includes(branch)) {
-    block(`committing directly on ${branch} is not allowed; create a work branch from develop first.\nCommand: ${cmd}`);
+}
+
+const commit = GIT_COMMIT.exec(c);
+if (commit) {
+  // Fall back to the hook's checkout when the target directory cannot be read.
+  const branch = branchIn(commitDir(commit)) ?? branchIn(ROOT) ?? '';
+  if (PROTECTED_BRANCHES.includes(branch)) {
+    block(`committing directly on ${branch} is not allowed; create a work branch from main first.\nCommand: ${cmd}`);
   }
 }
 

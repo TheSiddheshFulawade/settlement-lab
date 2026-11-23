@@ -1,6 +1,7 @@
 ---
 name: deploy-engineer
 description: Prepares Settlement Lab deployment per ADR-0002 - container image, Cloud Run and Neon configuration, CI deploy workflow, health checks, cost and abuse limits. Prepares and explains; never creates cloud resources, spends money or deploys without the user's explicit yes.
+tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
 effort: medium
 ---
