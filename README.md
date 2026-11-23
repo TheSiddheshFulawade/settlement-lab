@@ -396,3 +396,27 @@ framework-free.
   collide again; jitter spreads them. Falling back to pessimistic mid-flight would mix two protocols
   in one ledger and blur what the benchmark measures; the two modes are compared side by side in V3-07
   instead. `@Version` (JPA) is the same idea with the SQL hidden.
+
+### Transactional outbox and lease-based relay (V3-06)
+
+- **Chosen:** the posting and its `outbox` row are inserted in the same transaction as the transfer
+  (`PostgresLedger.postWithOutbox`), so both commit or neither does. A relay (`OutboxRelay`) claims due
+  rows with `SELECT ... FOR UPDATE SKIP LOCKED`, writes a lease (`next_attempt_at = now() + lease`) and
+  COMMITs; then it publishes with no transaction and no connection held; then it deletes each row the
+  GL accepted, or adds 1 to `attempts` and pushes `next_attempt_at` back by one lease if the publish
+  failed. The GL is keyed by transfer id, so a re-send (crash, lost ack, expired lease) answers
+  `ALREADY_RECORDED`: at-least-once delivery, exactly-once effect. **Alternatives:** publish to the GL
+  inside the posting transaction; change data capture from the write-ahead log (e.g. Debezium, logical
+  decoding); `LISTEN/NOTIFY` as the queue; holding the row lock for the whole GL call; a message broker
+  with XA (two-phase commit). **Why:** writing to the database and calling the GL are two writes to two
+  systems, and a crash between them loses or invents a message; putting the message in the same
+  transaction removes the gap. Publishing inside the transaction would pin a pool connection and row
+  locks over a network call, so one slow GL could starve the ledger (REQ-DB-009), and a rollback after a
+  successful call would leave a GL entry for nothing. Holding the lock during the call has the same
+  cost with no gain, since the lease already keeps other relays away. Change data capture avoids
+  polling but adds a separate service to run and operate, which is too much for this project;
+  `LISTEN/NOTIFY` messages are lost if nobody is listening, so a poll would still be needed. XA needs a
+  transaction manager and a GL that supports it, and a stuck coordinator holds locks. The cost of the
+  lease is that it is a time limit: it must be longer than the slowest batch (retries included), or
+  duplicates appear, which are harmless but wasted calls. The in-memory `OutboxPublisher` of v1 stays
+  for the in-memory ledgers; it loses its queue on a crash, the database outbox does not.
