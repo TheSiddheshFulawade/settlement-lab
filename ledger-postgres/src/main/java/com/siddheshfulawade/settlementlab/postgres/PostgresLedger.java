@@ -104,6 +104,12 @@ public final class PostgresLedger implements Ledger {
     private static final String INSERT_POSTING =
             "INSERT INTO posting (transfer_id, source, target, amount) VALUES (?, ?, ?, ?) RETURNING seq";
 
+    /**
+     * REQ-DB-006. attempts defaults to 0 and next_attempt_at to now(), the transaction's start time,
+     * so the row is due as soon as it commits; it is invisible to the relay until then.
+     */
+    private static final String INSERT_OUTBOX = "INSERT INTO outbox (posting_seq) VALUES (?)";
+
     private static final String RECORD_OUTCOME = "UPDATE transfer SET outcome = ?, posting_seq = ? WHERE id = ?";
 
     private static final String STORED_RESULT = "SELECT t.outcome, p.seq, p.source, p.target, p.amount"
@@ -215,7 +221,7 @@ public final class PostgresLedger implements Ledger {
             // The CHECK (balance >= 0) on account is the last line of defence: if the check above
             // were ever wrong, this update fails with 23514 and the whole transfer rolls back.
             moveMoney(connection, transfer.source(), transfer.target(), amount);
-            Posting posting = insertPosting(connection, transfer);
+            Posting posting = postWithOutbox(connection, transfer);
             recordOutcome(connection, transfer.id(), Outcome.POSTED, posting.sequence());
             return ApplyResult.posted(posting);
         });
@@ -301,7 +307,7 @@ public final class PostgresLedger implements Ledger {
         if (!bothUpdated) {
             throw VersionConflict.INSTANCE;
         }
-        Posting posting = insertPosting(connection, transfer);
+        Posting posting = postWithOutbox(connection, transfer);
         recordOutcome(connection, transfer.id(), Outcome.POSTED, posting.sequence());
         return ApplyResult.posted(posting);
     }
@@ -463,6 +469,27 @@ public final class PostgresLedger implements Ledger {
             update.addBatch();
             update.executeBatch();
         }
+    }
+
+    /**
+     * The only way a posting is written, in both lock modes: the posting row and its outbox row, on
+     * the caller's connection, inside the transfer's one transaction.
+     *
+     * <p>Invariant (REQ-DB-006): a posting and its outbox row commit together or not at all. COMMIT
+     * makes both durable at once; any failure before it (lock timeout, version conflict, CHECK
+     * violation) rolls both back. So there is never a posting the GL will not hear about, and never
+     * a message about a posting that does not exist (the foreign key backs the second half). This is
+     * what replaces a "write to the DB, then send" dual write, which loses the message on a crash
+     * between the two. Oracle: the same two INSERTs in one transaction; a JMS/AQ enqueue in the same
+     * transaction is the Oracle-native alternative.
+     */
+    private static Posting postWithOutbox(Connection connection, Transfer transfer) throws SQLException {
+        Posting posting = insertPosting(connection, transfer);
+        try (PreparedStatement insert = connection.prepareStatement(INSERT_OUTBOX)) {
+            insert.setLong(1, posting.sequence());
+            insert.executeUpdate();
+        }
+        return posting;
     }
 
     /**
