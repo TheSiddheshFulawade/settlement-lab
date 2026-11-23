@@ -44,7 +44,7 @@ public abstract class PostgresTestBase {
         config.setJdbcUrl(POSTGRES.getJdbcUrl());
         config.setUsername(POSTGRES.getUsername());
         config.setPassword(POSTGRES.getPassword());
-        config.setMaximumPoolSize(8);
+        config.setMaximumPoolSize(16);
         pool = new HikariDataSource(config);
     }
 
