@@ -19,17 +19,22 @@ import net.jqwik.api.Provide;
 
 /**
  * Properties every {@link Ledger} must have, for random accounts and random transfers (valid and
- * invalid). jqwik picks the {@link LedgerKind} too, so each property runs against every ledger.
+ * invalid). Extended by one concrete test class per ledger (engine: LockingLedger, CasLedger; later
+ * the PostgreSQL ledgers from the ledger-postgres module via the engine test-jar), so every ledger
+ * gets exactly the same proofs. A subclass only says how to build its ledger.
  */
-class LedgerPropertiesTest {
+public abstract class LedgerPropertiesContract {
+
+    /** A fresh ledger holding exactly these opening balances. */
+    protected abstract Ledger newLedger(Map<AccountId, Money> openingBalances);
 
     /** Random opening balances and a random list of transfers between them. */
-    record Scenario(Map<AccountId, Money> opening, List<Transfer> transfers) {}
+    public record Scenario(Map<AccountId, Money> opening, List<Transfer> transfers) {}
 
     private record Move(long source, long target, long amount) {}
 
     @Provide
-    Arbitrary<Scenario> scenarios() {
+    public Arbitrary<Scenario> scenarios() {
         return Arbitraries.integers().between(2, 6).flatMap(accounts -> {
             Arbitrary<List<Long>> balances =
                     Arbitraries.longs().between(0, 10_000).list().ofSize(accounts);
@@ -39,7 +44,7 @@ class LedgerPropertiesTest {
                             Arbitraries.longs().between(1, accounts + 1),
                             Arbitraries.longs().between(-5, 12_000))
                     .as(Move::new);
-            return Combinators.combine(balances, move.list().ofMaxSize(40)).as(LedgerPropertiesTest::scenario);
+            return Combinators.combine(balances, move.list().ofMaxSize(40)).as(LedgerPropertiesContract::scenario);
         });
     }
 
@@ -58,8 +63,8 @@ class LedgerPropertiesTest {
 
     @Property
     @Label("REQ-LAB-005 total is conserved and every invariant holds after any sequence of transfers")
-    void everyInvariantHolds(@ForAll LedgerKind kind, @ForAll("scenarios") Scenario scenario) {
-        Ledger ledger = kind.create(scenario.opening());
+    public void everyInvariantHolds(@ForAll("scenarios") Scenario scenario) {
+        Ledger ledger = newLedger(scenario.opening());
         Set<TransferId> accepted = new HashSet<>();
 
         for (Transfer t : scenario.transfers()) {
@@ -75,8 +80,8 @@ class LedgerPropertiesTest {
 
     @Property
     @Label("REQ-LAB-003 no balance is ever negative, after every single transfer")
-    void noBalanceGoesNegative(@ForAll LedgerKind kind, @ForAll("scenarios") Scenario scenario) {
-        Ledger ledger = kind.create(scenario.opening());
+    public void noBalanceGoesNegative(@ForAll("scenarios") Scenario scenario) {
+        Ledger ledger = newLedger(scenario.opening());
 
         for (Transfer t : scenario.transfers()) {
             ledger.apply(t);
@@ -86,8 +91,8 @@ class LedgerPropertiesTest {
 
     @Property
     @Label("REQ-LAB-002 REQ-LAB-003 a rejected transfer leaves balances and postings unchanged")
-    void rejectionChangesNothing(@ForAll LedgerKind kind, @ForAll("scenarios") Scenario scenario) {
-        Ledger ledger = kind.create(scenario.opening());
+    public void rejectionChangesNothing(@ForAll("scenarios") Scenario scenario) {
+        Ledger ledger = newLedger(scenario.opening());
 
         for (Transfer t : scenario.transfers()) {
             Map<AccountId, Money> before = ledger.snapshot();
@@ -102,8 +107,8 @@ class LedgerPropertiesTest {
 
     @Property
     @Label("REQ-LAB-002 REQ-LAB-003 REQ-LAB-004 outcomes and balances match a simple sequential model")
-    void matchesSequentialModel(@ForAll LedgerKind kind, @ForAll("scenarios") Scenario scenario) {
-        Ledger ledger = kind.create(scenario.opening());
+    public void matchesSequentialModel(@ForAll("scenarios") Scenario scenario) {
+        Ledger ledger = newLedger(scenario.opening());
         Map<AccountId, Long> model = new HashMap<>();
         scenario.opening().forEach((id, money) -> model.put(id, money.minorUnits()));
 
@@ -119,8 +124,8 @@ class LedgerPropertiesTest {
 
     @Property
     @Label("REQ-LAB-011 a POSTED result carries the posting the ledger recorded; a rejection carries none")
-    void resultCarriesThePosting(@ForAll LedgerKind kind, @ForAll("scenarios") Scenario scenario) {
-        Ledger ledger = kind.create(scenario.opening());
+    public void resultCarriesThePosting(@ForAll("scenarios") Scenario scenario) {
+        Ledger ledger = newLedger(scenario.opening());
 
         for (Transfer t : scenario.transfers()) {
             ApplyResult result = ledger.applyWithResult(t);
@@ -136,8 +141,8 @@ class LedgerPropertiesTest {
 
     @Property
     @Label("REQ-API-004 balance(id) agrees with the snapshot for every account, and is empty for an unknown one")
-    void balanceAgreesWithSnapshot(@ForAll LedgerKind kind, @ForAll("scenarios") Scenario scenario) {
-        Ledger ledger = kind.create(scenario.opening());
+    public void balanceAgreesWithSnapshot(@ForAll("scenarios") Scenario scenario) {
+        Ledger ledger = newLedger(scenario.opening());
         scenario.transfers().forEach(ledger::apply);
 
         ledger.snapshot().forEach((id, money) -> assertThat(ledger.balance(id)).contains(money));
@@ -159,5 +164,14 @@ class LedgerPropertiesTest {
         model.merge(t.source(), -amount, Long::sum);
         model.merge(t.target(), amount, Long::sum);
         return Outcome.POSTED;
+    }
+
+    @Property(tries = 1)
+    @Label("TODO-ME whole-balance transfer leaves the source at exactly 0 and is POSTED")
+    public void wholeBalanceTransferEmptiesTheSource() {
+        // TODO-ME: write this property or test. Open two accounts (Fixtures.uniformAccounts(2, n)),
+        // transfer the source's entire balance to the other, and assert the outcome is POSTED and the
+        // source balance is exactly Money.of(0). Check it: change LockingLedger's funds test from
+        // "<" to "<=" and this must fail; restore it and it passes.
     }
 }

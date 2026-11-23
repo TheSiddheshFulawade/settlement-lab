@@ -379,7 +379,7 @@ The GL is keyed by transfer id, so a resend after a lost acknowledgement is harm
 ## 17. Tasks (v3, test-first)
 
 - [x] V3-01 `ledger-postgres` module, Flyway V1 schema, Testcontainers base test, `db` profile, CI on Ubuntu only; ADR-0001 entries (REQ-DB-002, 011, 012)
-- [ ] V3-02 Engine test-jar: ledger property and stress suites shared, in-memory ledgers still green (no behaviour change)
+- [x] V3-02 Engine test-jar: ledger property and stress suites shared, in-memory ledgers still green (no behaviour change)
 - [ ] V3-03 `PostgresLedger` pessimistic on the shared suites, opposing-transfer deadlock test, timeouts (REQ-DB-001, 003, 009, 010)
 - [ ] V3-04 Idempotency by `transfer` key: concurrent duplicates, two instances, after restart, a duplicate `REJECTED_FUNDS` returns the stored rejection; README Decisions entry on the idempotency-key rule (REQ-DB-005)
 - [ ] V3-05 Optimistic mode on the same suites, retry with jitter capped at 10, `REJECTED_CONTENTION` in `Outcome` with the engine releasing the claim, the api's 503 + `Retry-After` mapping and its test, conflict count in metrics (REQ-DB-004, 004a, REQ-API-008)
