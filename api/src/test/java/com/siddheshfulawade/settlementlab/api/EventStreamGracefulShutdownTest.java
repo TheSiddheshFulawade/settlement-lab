@@ -5,11 +5,17 @@ import static org.awaitility.Awaitility.await;
 
 import com.siddheshfulawade.settlementlab.domain.AccountId;
 import com.siddheshfulawade.settlementlab.domain.Money;
+import com.siddheshfulawade.settlementlab.domain.Outcome;
+import com.siddheshfulawade.settlementlab.domain.Transfer;
+import com.siddheshfulawade.settlementlab.domain.TransferId;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletionStage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -30,6 +36,7 @@ class EventStreamGracefulShutdownTest {
                         "--server.port=0",
                         "--server.shutdown=graceful",
                         "--spring.lifecycle.timeout-per-shutdown-phase=" + PHASE_TIMEOUT.toSeconds() + "s",
+                        "--settlement.workers=1",
                         "--settlement.accounts=5",
                         "--settlement.opening-balance=1000");
         try {
@@ -37,11 +44,16 @@ class EventStreamGracefulShutdownTest {
             EventStreamLineSeparatorIdTest.RawStream stream =
                     EventStreamLineSeparatorIdTest.RawStream.open("http://localhost:" + port + "/api/v1/events");
             await().atMost(Duration.ofSeconds(10)).until(() -> stream.text().contains("connected"));
-            int accepted = 20;
-            for (int i = 0; i < accepted; i++) {
-                post(port, "drain-" + i);
-            }
+            post(port, "over-http"); // the stream is live and the engine is working
+            // Handed over without waiting, one worker: most are still queued when the context closes, so
+            // the drain check below fails if shutdown ever discards accepted transfers.
             SettlementRuntime runtime = context.getBean(SettlementRuntime.class);
+            List<CompletionStage<Outcome>> accepted = new ArrayList<>();
+            for (int i = 0; i < 900; i++) {
+                accepted.add(runtime.engine()
+                        .submit(new Transfer(
+                                TransferId.of("drain-" + i), AccountId.of(1), AccountId.of(2), Money.of(1))));
+            }
 
             long start = System.nanoTime();
             context.close();
@@ -54,9 +66,12 @@ class EventStreamGracefulShutdownTest {
                     .untilAsserted(() -> assertThat(stream.ended())
                             .as("the client's stream must end when the server shuts down")
                             .isTrue());
+            assertThat(accepted)
+                    .as("every accepted transfer has its outcome when shutdown completes")
+                    .allSatisfy(a -> assertThat(a.toCompletableFuture()).isCompletedWithValue(Outcome.POSTED));
             assertThat(runtime.ledger().balance(AccountId.of(1)))
                     .as("every accepted transfer is drained before shutdown completes")
-                    .contains(Money.of(1000 - accepted));
+                    .contains(Money.of(1000 - 901));
         } finally {
             context.close();
         }
