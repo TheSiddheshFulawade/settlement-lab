@@ -94,7 +94,13 @@ class PostgresIdempotencyTest extends PostgresTestBase {
             for (int step = 0; step < ids; step++) {
                 int i = (step + thread * 7) % ids; // overlapping sets, a different order per thread
                 ApplyResult result = ledger.applyWithResult(
-                        transfer("id-" + i, accounts[i % 3], accounts[(i + 1) % 3], 10 + i % 40));
+                        // Money only circulates A→B→C→A, so funds never run out on their own: every
+                        // 10th id asks for more than all accounts hold, a deterministic REJECTED_FUNDS.
+                        transfer(
+                                "id-" + i,
+                                accounts[i % 3],
+                                accounts[(i + 1) % 3],
+                                i % 10 == 0 ? 1_000_000 : 10 + i % 40));
                 answers.computeIfAbsent("id-" + i, k -> ConcurrentHashMap.newKeySet())
                         .add(result);
             }
