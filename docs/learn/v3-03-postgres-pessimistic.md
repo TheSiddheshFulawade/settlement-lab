@@ -19,7 +19,8 @@ transaction on ONE connection:
 1. INSERT INTO transfer (id, outcome) VALUES (?, 'PENDING') ON CONFLICT (id) DO NOTHING   (line 53)
      0 rows inserted -> duplicate: read and return the stored outcome, done.
 2. SELECT id, balance FROM account WHERE id IN (?, ?) ORDER BY id FOR UPDATE            (line 60)
-     fewer than 2 rows -> unknown account: ROLLBACK (the claim goes too), REJECTED_INVALID.
+     fewer than 2 rows -> unknown account: UPDATE transfer SET outcome='REJECTED_INVALID'; COMMIT.
+       (Since V3-04; in V3-03 this rolled the claim back. Same id, same answer: REQ-DB-005.)
 3. balance of source < amount?  -> UPDATE transfer SET outcome='REJECTED_FUNDS'; COMMIT.
    else: UPDATE account SET balance = balance + ? WHERE id = ?   (twice, one batch, line 64)
          INSERT INTO posting ... RETURNING seq                   (line 67)

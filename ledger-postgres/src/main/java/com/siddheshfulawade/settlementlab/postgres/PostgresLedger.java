@@ -49,7 +49,12 @@ public final class PostgresLedger implements Ledger {
 
     static final Duration DEFAULT_STATEMENT_TIMEOUT = Duration.ofSeconds(30);
 
-    /** Step 1: claim the transfer id. Zero rows inserted means the id is already recorded. */
+    /**
+     * Step 1: claim the transfer id. Zero rows inserted means the id is already recorded. ON CONFLICT
+     * DO NOTHING rather than catching 23505: in PostgreSQL any error aborts the whole transaction, so
+     * catching the unique violation would need a SAVEPOINT first. Oracle has no ON CONFLICT; a plain
+     * INSERT that catches ORA-00001 (DUP_VAL_ON_INDEX) works there, as Oracle fails only the statement.
+     */
     private static final String CLAIM =
             "INSERT INTO transfer (id, outcome) VALUES (?, 'PENDING') ON CONFLICT (id) DO NOTHING";
 
@@ -119,18 +124,27 @@ public final class PostgresLedger implements Ledger {
     }
 
     /**
-     * One transaction, SPEC.md 16.3. A lock or statement timeout rolls everything back, the claim
-     * included, and throws {@link LedgerDatabaseException}; the same id can then be retried.
+     * One transaction, SPEC.md 16.3. Every outcome that reaches the database is stored on the id's
+     * {@code transfer} row and replayed for the same id (REQ-DB-005): POSTED, REJECTED_FUNDS, and
+     * REJECTED_INVALID for an unknown account. A lock or statement timeout, or any other error, rolls
+     * everything back, the claim included, and throws {@link LedgerDatabaseException}; the id stays
+     * free, so the same id can then be retried.
      */
     @Override
     public ApplyResult applyWithResult(Transfer transfer) {
         // Amount and same-account rules need no database; account existence is checked by step 2.
+        // These are rejected before any database call, so nothing is stored for the id. That is safe:
+        // the answer depends only on the transfer itself, so a replay gets the same answer anyway.
         if (TransferValidator.validate(transfer, id -> true).isPresent()) {
             return ApplyResult.rejected(Outcome.REJECTED_INVALID);
         }
         return inTransaction("apply transfer " + transfer.id(), connection -> {
-            // Step 1. A concurrent insert of the same id waits here until the other transaction ends,
-            // and the claim row is only visible once it holds the final outcome, so no one sees PENDING.
+            // Step 1. Invariant (REQ-DB-005): one transaction per id gets past this line. A concurrent
+            // insert of the same id waits here, on the primary key, until the other transaction ends:
+            // if it committed, we insert nothing and read its row (READ COMMITTED: the next statement
+            // sees every commit that finished before it began); if it rolled back, our insert goes
+            // ahead. The row is only visible once it holds the final outcome, so no one sees PENDING.
+            // This wait is the first statement and holds no lock yet, so it cannot join a deadlock.
             if (!claim(connection, transfer.id())) {
                 return storedResult(connection, transfer.id());
             }
@@ -141,8 +155,9 @@ public final class PostgresLedger implements Ledger {
             // and never close a cycle. Opposing transfers A->B and B->A both lock A first.
             Map<Long, Long> locked = lockAccounts(connection, transfer);
             if (locked.size() < 2) {
-                // Unknown source or target: undo the claim, so an invalid transfer stores nothing.
-                connection.rollback();
+                // Unknown source or target: store REJECTED_INVALID like REJECTED_FUNDS, so the same id
+                // gets the same answer later even if the account is opened in between (REQ-DB-005).
+                recordOutcome(connection, transfer.id(), Outcome.REJECTED_INVALID, null);
                 return ApplyResult.rejected(Outcome.REJECTED_INVALID);
             }
 
@@ -171,15 +186,22 @@ public final class PostgresLedger implements Ledger {
     }
 
     /**
-     * The outcome recorded by the transaction that claimed this id first. V3-04 tests this path
-     * (concurrent duplicates, two instances, restart).
+     * The outcome committed by the transaction that claimed this id first: POSTED with its posting,
+     * or a stored REJECTED_FUNDS or REJECTED_INVALID. The claim met a committed row, so the row is
+     * visible and holds its final outcome; either check below failing means a bug, never a race.
      */
     private static ApplyResult storedResult(Connection connection, TransferId id) throws SQLException {
         try (PreparedStatement select = connection.prepareStatement(STORED_RESULT)) {
             select.setString(1, id.value());
             try (ResultSet row = select.executeQuery()) {
-                row.next();
-                Outcome outcome = Outcome.valueOf(row.getString(1));
+                if (!row.next()) {
+                    throw new IllegalStateException("transfer " + id + " conflicted but no row is visible");
+                }
+                String stored = row.getString(1);
+                if ("PENDING".equals(stored)) {
+                    throw new IllegalStateException("transfer " + id + " is visible while PENDING");
+                }
+                Outcome outcome = Outcome.valueOf(stored);
                 if (outcome != Outcome.POSTED) {
                     return ApplyResult.rejected(outcome);
                 }
@@ -240,13 +262,16 @@ public final class PostgresLedger implements Ledger {
         }
     }
 
+    /** Replaces PENDING on the row this transaction claimed in step 1, so exactly one row changes. */
     private static void recordOutcome(Connection connection, TransferId id, Outcome outcome, Long postingSeq)
             throws SQLException {
         try (PreparedStatement update = connection.prepareStatement(RECORD_OUTCOME)) {
             update.setString(1, outcome.name());
             update.setObject(2, postingSeq, Types.BIGINT);
             update.setString(3, id.value());
-            update.executeUpdate();
+            if (update.executeUpdate() != 1) {
+                throw new IllegalStateException("transfer " + id + " lost its claim row");
+            }
         }
     }
 
@@ -315,8 +340,7 @@ public final class PostgresLedger implements Ledger {
 
     /**
      * Runs {@code work} in one transaction: settings first, then the work, then COMMIT. Any failure
-     * rolls back before the connection goes back to the pool, so no lock outlives the call. If the
-     * work rolled back itself, the COMMIT has nothing left to commit. The pool restores autocommit
+     * rolls back before the connection goes back to the pool, so no lock outlives the call. The pool restores autocommit
      * when the connection is returned (HikariCP and Spring Boot's pool both do).
      */
     private <T> T inTransaction(String what, SqlWork<T> work) {
