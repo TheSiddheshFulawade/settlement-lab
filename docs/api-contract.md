@@ -1,9 +1,9 @@
 # Runs API contract (v2.1)
 
 For the portfolio `/lab` page. Source of truth for behaviour: SPEC.md §18 (REQ-RUN-001 to 012).
-**Status: approved 2026-11-23.** Base URL in production: `https://api.siddheshfulawade.com`.
+**Status: approved 2026-11-23, amended 2026-11-24.** Base URL in production: `https://api.siddheshfulawade.com`.
 
-All bodies are JSON (`application/json`), money is in **minor units** (`long`), times are
+All bodies are JSON (`application/json`), money is in plain **minor units** (`long`), times are
 milliseconds or microseconds as the field name says. Errors are RFC 9457 problem details
 (`application/problem+json`).
 
@@ -29,7 +29,9 @@ milliseconds or microseconds as the field name says. Errors are RFC 9457 problem
 | `transfers` | integer | 1 to 20,000 |
 | `duplicatePercent` | integer | 0 to 10 |
 
-All fields are required; unknown fields are rejected.
+All fields are required; unknown fields are rejected. A request body may be at most 16 KB.
+A `runId` matches `[A-Za-z0-9-]{1,64}`. Transfers are submitted at a steady 2,000 per second.
+`OUTAGE` refuses general-ledger calls from 1 s to 4 s after the start.
 
 **202 Accepted**, header `Location: /api/v1/runs/{runId}`:
 
@@ -46,14 +48,16 @@ All fields are required; unknown fields are rejected.
 
 `GET /api/v1/runs/{runId}/events` with `Accept: text/event-stream` (use `EventSource`).
 
-### `metrics` (every 250 ms while the run is active)
+Events have no `id:` and there is no `Last-Event-ID` replay: a reconnecting client gets the current
+metrics, or the `report` if the run is done.
+
+### `metrics` (every 250 ms while the run is active, drain included)
 
 ```
 event: metrics
-id: 12
-data: {"elapsedMs":3000,"submitted":5400,"posted":5120,"rejected":31,"duplicates":104,
-data:  "throughputPerSecond":225608,"p99Micros":735,"queueDepth":12,"queueCapacity":1024,
-data:  "glRetries":17,"breakerState":"CLOSED","outboxSize":0}
+data: {"elapsedMs":3000,"submitted":6000,"posted":5870,"rejected":5,"duplicates":120,
+data:  "throughputPerSecond":1957,"p99Micros":735,"queueDepth":5,"queueCapacity":1024,
+data:  "glRetries":845,"breakerState":"CLOSED","outboxSize":1070}
 ```
 
 (Shown wrapped; the server sends one `data:` line.)
@@ -62,7 +66,7 @@ data:  "glRetries":17,"breakerState":"CLOSED","outboxSize":0}
 | ----- | ------- |
 | `elapsedMs` | time since the run started |
 | `submitted`, `posted`, `rejected`, `duplicates` | running counts (`rejected` = funds + invalid + queue full) |
-| `throughputPerSecond` | postings per second over the last 1 s |
+| `throughputPerSecond` | postings per second over the last 1 s; the paced rate, **not** engine capacity (benchmarks are in the README) |
 | `p99Micros` | p99 submit-to-outcome latency so far |
 | `queueDepth` / `queueCapacity` | intake queue fill |
 | `glRetries` | general-ledger retries so far |
@@ -77,16 +81,16 @@ data:  "glRetries":17,"breakerState":"CLOSED","outboxSize":0}
   "status": "DONE",
   "stoppedEarly": false,
   "settings": { "ledger": "LOCKING", "threads": "VIRTUAL", "faults": "FLAKY", "transfers": 20000, "duplicatePercent": 2 },
-  "durationMs": 4120,
+  "durationMs": 12250,
   "transfersCompleted": 20000,
-  "openingTotal": 1000000000,
-  "closingTotal": 1000000000,
+  "openingTotal": 10000000,
+  "closingTotal": 10000000,
   "duplicatesSent": 400,
   "duplicatesApplied": 0,
-  "throughputPerSecond": 225608,
+  "throughputPerSecond": 1600,
   "p50Micros": 210,
   "p99Micros": 735,
-  "glRetries": 61,
+  "glRetries": 3459,
   "breakerOpens": 0,
   "invariants": [
     { "name": "TOTAL_CONSERVED", "passed": true, "counterexample": null },
@@ -100,12 +104,21 @@ data:  "glRetries":17,"breakerState":"CLOSED","outboxSize":0}
 }
 ```
 
+Numbers are illustrative: 1,000 accounts × 10,000 = 10,000,000 in total, and 20,000 transfers with 400
+duplicates make 19,600 postings. `durationMs` runs from the 202 to the end of the drain (drain
+included), and `throughputPerSecond` = postings ÷ `durationMs`: 19,600 ÷ 12.25 s = 1,600. It is a paced
+rate, at most 2,000, not engine capacity. A `counterexample` is a string of at most 500 characters,
+or null.
+
 `stoppedEarly: true` means the 20 s limit ended the run; the checks still cover every transfer
 that was submitted. Connecting after the run finished sends the `report` at once. A run's report is
-kept for 10 minutes; after that the events URL answers 404.
+kept for 10 minutes; after that the run answers 404.
+
+The report arrives within 60 s of the 202. If the stream closes without one, `GET` the run: 404 means
+it expired (the server lost its CPU or restarted).
 
 `GET /api/v1/runs/{runId}` returns `{"runId", "status"}` while running (`RUNNING`), or the same
-body as the `report` event once `DONE`.
+body as the `report` event once `DONE`. There are no other statuses.
 
 ## 3. Errors and limits
 
@@ -113,10 +126,11 @@ body as the `report` event once `DONE`.
 | ------ | ---- | ------- | --------------------- |
 | 400 | missing, unknown or out-of-range field, malformed JSON | | `invalid-run-request` |
 | 404 | unknown or expired `runId` | | `run-not-found` |
+| 413 | request body over 16 KB | | `body-too-large` |
 | 429 | this IP started 5 runs in the last hour, or a 3rd events subscriber on one run | `Retry-After` (s) | `rate-limited` |
 | 503 | 2 runs already active, or 60 runs this hour across all visitors | `Retry-After` (s) | `busy` |
 
-Example:
+Every 429 and 503 body carries `retryAfterSeconds`, equal to `Retry-After`. Example:
 
 ```json
 {
@@ -131,10 +145,11 @@ Example:
 ## 4. CORS
 
 Allowed origins: `https://siddheshfulawade.com` and the Cloudflare Pages preview origin (set by
-configuration). Methods `GET`, `POST`; request header `Content-Type`; exposed headers `Location`,
+configuration; expected `https://develop.portfolio-7qt.pages.dev`, which answered 404 on 2026-11-23).
+This covers the runs endpoints, the event stream, `/actuator/health` and every error body. Methods `GET`, `POST`; request header `Content-Type`; exposed headers `Location`,
 `Retry-After`. No credentials.
 
 ## 5. Health
 
-`GET /actuator/health` → `{"status":"UP"}`. The page calls it on load and shows "starting the
+`GET /actuator/health` → `{"status":"UP"}`, no details, independent of any database. The page calls it on load and shows "starting the
 engine" until it answers (cold start, ADR-0002).
