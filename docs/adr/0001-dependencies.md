@@ -25,6 +25,7 @@ and an entry here for every dependency. Fewer dependencies means less to defend 
 | Spring Boot BOM (`spring-boot-dependencies`, imported) | 4.1.2 | Manages every api dependency version below, consistently. | V2-01 |
 | `spring-boot-starter-webmvc` | 4.1.2 (managed) | HTTP server and MVC controllers; with virtual threads, blocking a request thread is cheap. | V2-01 |
 | `spring-boot-starter-validation` | 4.1.2 (managed) | Bean Validation of request bodies (REQ-API-003). | V2-01 |
+| `spring-boot-starter-actuator` | 4.1.2 (managed) | The `/actuator/health` endpoint the portfolio page calls on load (REQ-RUN-013). Only `health` is exposed, with no details, the discovery page and probes off; everything else answers 404. Brings Micrometer (transitive, managed by the BOM). Alternative: a hand-written `/health` controller: less code to pull in, but the standard path and status shape are what Cloud Run and uptime checks expect, and the endpoint stays one property away from a real readiness check. | V2-07 |
 | `spring-boot-maven-plugin` | 4.1.2 | Builds the runnable api jar. | V2-01 |
 
 Test, api only: `spring-boot-starter-test` and `spring-boot-starter-webmvc-test` (managed: JUnit

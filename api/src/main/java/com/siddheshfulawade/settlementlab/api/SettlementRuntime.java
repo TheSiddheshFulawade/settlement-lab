@@ -6,6 +6,7 @@ import com.siddheshfulawade.settlementlab.domain.Ledger;
 import com.siddheshfulawade.settlementlab.domain.LockingLedger;
 import com.siddheshfulawade.settlementlab.domain.Money;
 import com.siddheshfulawade.settlementlab.gl.FakeGeneralLedger;
+import com.siddheshfulawade.settlementlab.gl.FaultProfile;
 import com.siddheshfulawade.settlementlab.gl.OutboxPublisher;
 import com.siddheshfulawade.settlementlab.pipeline.EngineConfig;
 import com.siddheshfulawade.settlementlab.pipeline.SettlementEngine;
@@ -36,10 +37,10 @@ public final class SettlementRuntime implements AutoCloseable {
     private final SettlementEngine engine;
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    private SettlementRuntime(SettlementProperties properties, SettlementListener listener) {
+    private SettlementRuntime(SettlementProperties properties, SettlementListener listener, FaultProfile faultProfile) {
         this.properties = properties;
         this.ledger = createLedger(properties);
-        this.generalLedger = new FakeGeneralLedger(properties.faultProfile(), properties.seed());
+        this.generalLedger = new FakeGeneralLedger(faultProfile, properties.seed());
         this.resilient = new ResilientPublisher(generalLedger, ResilienceConfig.defaults());
         this.outbox = new OutboxPublisher(resilient, OUTBOX_RETRY);
         this.engine = new SettlementEngine(
@@ -59,7 +60,13 @@ public final class SettlementRuntime implements AutoCloseable {
     }
 
     public static SettlementRuntime start(SettlementProperties properties, SettlementListener listener) {
-        return new SettlementRuntime(properties, listener);
+        return new SettlementRuntime(properties, listener, properties.faultProfile());
+    }
+
+    /** As above, but with an explicit fault profile (a run sets its own outage window). */
+    public static SettlementRuntime start(
+            SettlementProperties properties, SettlementListener listener, FaultProfile faultProfile) {
+        return new SettlementRuntime(properties, listener, faultProfile);
     }
 
     private static Ledger createLedger(SettlementProperties properties) {

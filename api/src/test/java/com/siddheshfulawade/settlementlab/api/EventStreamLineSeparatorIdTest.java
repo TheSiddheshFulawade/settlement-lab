@@ -3,6 +3,10 @@ package com.siddheshfulawade.settlementlab.api;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import com.siddheshfulawade.settlementlab.domain.AccountId;
+import com.siddheshfulawade.settlementlab.domain.Money;
+import com.siddheshfulawade.settlementlab.domain.Transfer;
+import com.siddheshfulawade.settlementlab.domain.TransferId;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -17,6 +21,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
@@ -28,6 +33,9 @@ class EventStreamLineSeparatorIdTest {
 
     @LocalServerPort
     int port;
+
+    @Autowired
+    SettlementRuntime runtime;
 
     @ParameterizedTest(name = "[{index}] id with separator")
     @ValueSource(strings = {"a\nb", "a\rb", "a\r\nb", "bad\nevent: forged", "bad\r\nevent: forged"})
@@ -43,7 +51,9 @@ class EventStreamLineSeparatorIdTest {
             return stream.text().contains("\"id\":\"warm-");
         });
 
-        post(id);
+        // Over HTTP such an id is now a 400 (REQ-API-009, see TransferInputTest), so the regression is kept by
+        // handing the transfer to the engine directly: the stream must still cope with an id the engine accepted.
+        runtime.engine().submit(new Transfer(TransferId.of(id), AccountId.of(1), AccountId.of(2), Money.of(1)));
         post("next-" + unique);
 
         String escaped = id.replace("\r", "\\r").replace("\n", "\\n");

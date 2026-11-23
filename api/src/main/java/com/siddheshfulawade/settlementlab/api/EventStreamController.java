@@ -2,6 +2,7 @@ package com.siddheshfulawade.settlementlab.api;
 
 import java.io.IOException;
 import java.time.Duration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -9,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /** {@code GET /api/v1/events}: a server-sent event per processed transfer (REQ-API-005). */
+@Profile("!prod") // REQ-API-010: the public service serves only the runs API and health
 @RestController
 @RequestMapping("/api/v1/events")
 class EventStreamController {
