@@ -329,6 +329,11 @@ framework-free.
   thread per subscriber writing to the connection; a full buffer drops that subscriber.
   **Alternative:** write to clients from the engine's worker. **Why:** a slow or vanished client
   must never cost a worker any time (REQ-API-005); the worst it can cost is its own buffer.
+- **Chosen:** each subscriber's close runs on its own virtual thread, once (a `compareAndSet` on an
+  `open` flag decides the winner), with a failing close caught. **Alternative:** close inline on the
+  calling thread, or on the subscriber's sender thread. **Why:** closing an emitter can block or throw,
+  and the sender may be stuck in a socket write that ignores interrupts; inline close would hand that
+  stall to an engine worker. A separate thread costs one cheap virtual thread and keeps `onOutcome` fast.
 
 ### PostgreSQL module and schema (V3-01)
 
