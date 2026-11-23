@@ -247,16 +247,17 @@ Maven parent with two modules:
 - [x] V2-01 Multi-module build (parent, `engine`, `api`), app boots with the engine wired from properties, graceful shutdown, CI (REQ-API-006, 007)
 - [x] V2-02 `POST /api/v1/transfers` with outcome mapping, idempotent replay and problem details (REQ-API-001 to 003)
 - [x] V2-03 `GET /api/v1/accounts/{id}` via `Ledger.balance`, `GET /api/v1/metrics` (REQ-API-004)
-- [ ] V2-04 `GET /api/v1/events` SSE stream with bounded per-subscriber buffers (REQ-API-005)
-- [ ] V2-05 README v2 section, how to run, an HTTP load check with invariants
-- [ ] V2-06 Deploy to `api.siddheshfulawade.com` (only with the user's explicit yes)
+- [ ] V2-04 (paused until V3-07) `GET /api/v1/events` SSE stream with bounded per-subscriber buffers (REQ-API-005)
+- [ ] V2-05 (paused until V3-07) README v2 section, how to run, an HTTP load check with invariants
+- [ ] V2-06 (paused until V3-07) Deploy to `api.siddheshfulawade.com` (only with the user's explicit yes)
 
 # Settlement Lab · v3 spec (PostgreSQL ledger)
 
 Written 2026-11-21, per ADR-0002. Same rules as section 0. The engine module stays framework-free
 and database-free: PostgreSQL lives in a new module behind the existing `Ledger` port. The user
-lifted the feature pause for v3 only (2026-11-21); V2-04 to V2-06 stay paused. One task per
-session, each ending with its own PR for the user's merge.
+lifted the feature pause for v3 on 2026-11-21 and for v2 on 2026-11-23 (live demo by 1 Dec 2026):
+v3 tasks run first, back to back, then V2-04 to V2-06 (marked "paused until V3-07" so the session
+hook points at the next v3 task). Each task ends with its own PR, merged by `git-ops` on green CI.
 
 ## 14. Scope (v3)
 
@@ -334,7 +335,7 @@ the Oracle equivalents).
 | ----- | ------- | --- |
 | `account` | `id BIGINT PK`, `balance BIGINT NOT NULL CHECK (balance >= 0)`, `version BIGINT NOT NULL` | balances; `version` for optimistic mode |
 | `transfer` | `id TEXT PK`, `outcome TEXT NOT NULL`, `posting_seq BIGINT NULL` | one row per transfer id, every outcome: the idempotency record |
-| `posting` | `seq BIGINT PK` (identity), `transfer_id TEXT UNIQUE`, `source`, `target`, `amount` | the ledger's postings, in sequence order |
+| `posting` | `seq BIGINT PK` (identity), `transfer_id TEXT NOT NULL UNIQUE REFERENCES transfer`, `source`, `target`, `amount` | the ledger's postings, in sequence order |
 | `outbox` | `posting_seq BIGINT PK REFERENCES posting`, `attempts INT`, `next_attempt_at TIMESTAMPTZ` | postings not yet accepted by the GL |
 
 ### 16.3 One transfer (pessimistic, `READ COMMITTED`)
@@ -388,4 +389,4 @@ The GL is keyed by transfer id, so a resend after a lost acknowledgement is harm
 
 Each task follows the same flow: `test-engineer` writes the failing tests, `database-engineer` or
 `java-engineer` makes them pass, `mvnw verify`, `tutor` writes the `docs/learn` note with Oracle
-equivalents, then `/ship`; stop at the PR for the user's merge.
+equivalents, then `/ship` (`git-ops` merges on the required green CI checks).

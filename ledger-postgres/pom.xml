@@ -136,6 +136,12 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <excludedGroups>${db.excluded.groups}</excludedGroups>
+          <systemPropertyVariables>
+            <!-- Flyway, Testcontainers and HikariCP log through SLF4J 2.x. With no provider on the
+                 test classpath their output is discarded (as in the engine), and this property
+                 hides SLF4J's own "no providers" warning. No extra dependency needed. -->
+            <slf4j.internal.verbosity>ERROR</slf4j.internal.verbosity>
+          </systemPropertyVariables>
         </configuration>
       </plugin>
     </plugins>
