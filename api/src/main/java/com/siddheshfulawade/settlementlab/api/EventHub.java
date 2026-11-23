@@ -37,11 +37,13 @@ public final class EventHub implements SettlementListener, AutoCloseable {
         final Sink sink;
         final BlockingQueue<OutcomeEvent> buffer;
         final AtomicBoolean open = new AtomicBoolean(true);
-        Thread sender;
+        /** Created unstarted, so it is set before anyone else can see this subscription. */
+        final Thread sender;
 
         Subscription(Sink sink) {
             this.sink = sink;
             this.buffer = new ArrayBlockingQueue<>(bufferSize);
+            this.sender = Thread.ofVirtual().name("sse-sender").unstarted(this::deliver);
         }
 
         void deliver() {
@@ -63,6 +65,7 @@ public final class EventHub implements SettlementListener, AutoCloseable {
     private final int bufferSize;
     private final Set<Subscription> subscriptions = ConcurrentHashMap.newKeySet();
     private final LongAdder dropped = new LongAdder();
+    private volatile boolean closed;
 
     public EventHub(int bufferSize) {
         if (bufferSize < 1) {
@@ -73,9 +76,22 @@ public final class EventHub implements SettlementListener, AutoCloseable {
 
     /** Starts delivering to {@code sink}; returns a handle to cancel it with. */
     public Runnable subscribe(Sink sink) {
+        if (closed) {
+            closeQuietly(sink); // runs on the caller's thread, never the engine's
+            return () -> {};
+        }
         Subscription subscription = new Subscription(sink);
         subscriptions.add(subscription);
-        subscription.sender = Thread.ofVirtual().name("sse-sender").start(subscription::deliver);
+        // Invariant: no subscription outlives close(). close() sets 'closed' and then iterates; we add
+        // and then re-check 'closed'. Either the iteration sees our add, or we see 'closed' here. Both
+        // may happen; drop() is idempotent (compareAndSet), so the sink is still closed exactly once.
+        if (closed) {
+            drop(subscription);
+        } else {
+            // Start only after the checks. A cancel before this point is safe: drop() interrupts an
+            // unstarted thread (a no-op) and deliver() checks 'open' first, so it exits at once.
+            subscription.sender.start();
+        }
         return () -> drop(subscription);
     }
 
@@ -93,11 +109,25 @@ public final class EventHub implements SettlementListener, AutoCloseable {
         }
     }
 
+    /**
+     * Ends one subscription. Invariant: the engine thread only ever does a non-blocking offer plus
+     * this method, so it must never wait. The winner of the compareAndSet runs the sink's close once,
+     * on its own virtual thread: close may block or throw, and the sender may be stuck in a write.
+     */
     private void drop(Subscription subscription) {
         if (subscription.open.compareAndSet(true, false)) {
             subscriptions.remove(subscription);
             subscription.sender.interrupt();
-            subscription.sink.close();
+            Thread.startVirtualThread(() -> closeQuietly(subscription.sink));
+        }
+    }
+
+    /** A failing close (e.g. the emitter already completed) must not affect anyone else. */
+    private static void closeQuietly(Sink sink) {
+        try {
+            sink.close();
+        } catch (RuntimeException ignored) {
+            // nothing to do: the subscription is already gone
         }
     }
 
@@ -112,6 +142,7 @@ public final class EventHub implements SettlementListener, AutoCloseable {
 
     @Override
     public void close() {
+        closed = true; // before iterating: see the re-check in subscribe()
         subscriptions.forEach(this::drop);
     }
 }
