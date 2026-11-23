@@ -66,7 +66,7 @@ class OutboxRelayDrainTest extends PostgresTestBase {
         firstPool.close(); // everything of the first life is gone
         // OPTIMISTIC may, in a rare run, give up on a hot pair after 10 attempts: that stores nothing,
         // so it is a legal outcome here. Every POSTED transfer must have left exactly one outbox row.
-        assertThat(outcomes).containsOnly(Outcome.POSTED, Outcome.REJECTED_CONTENTION);
+        assertThat(outcomes).isSubsetOf(Outcome.POSTED, Outcome.REJECTED_CONTENTION);
         long posted = outcomes.stream().filter(o -> o == Outcome.POSTED).count();
         assertThat(posted).as("almost everything posts").isGreaterThan(100);
         assertThat(count(dataSource(), "outbox")).as("rows survive the stop").isEqualTo(posted);
