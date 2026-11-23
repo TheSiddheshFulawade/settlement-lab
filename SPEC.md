@@ -247,17 +247,16 @@ Maven parent with two modules:
 - [x] V2-01 Multi-module build (parent, `engine`, `api`), app boots with the engine wired from properties, graceful shutdown, CI (REQ-API-006, 007)
 - [x] V2-02 `POST /api/v1/transfers` with outcome mapping, idempotent replay and problem details (REQ-API-001 to 003)
 - [x] V2-03 `GET /api/v1/accounts/{id}` via `Ledger.balance`, `GET /api/v1/metrics` (REQ-API-004)
-- [ ] V2-04 (paused until V3-07) `GET /api/v1/events` SSE stream with bounded per-subscriber buffers (REQ-API-005)
-- [ ] V2-05 (paused until V3-07) README v2 section, how to run, an HTTP load check with invariants
-- [ ] V2-06 (paused until V3-07) Deploy to `api.siddheshfulawade.com` (only with the user's explicit yes)
+- [ ] V2-04 `GET /api/v1/events` SSE stream with bounded per-subscriber buffers (REQ-API-005)
+- [ ] V2-05 README v2 section, how to run, an HTTP load check with invariants
+- [ ] V2-06 Deploy to `api.siddheshfulawade.com` (only with the user's explicit yes)
 
 # Settlement Lab · v3 spec (PostgreSQL ledger)
 
 Written 2026-11-21, per ADR-0002. Same rules as section 0. The engine module stays framework-free
 and database-free: PostgreSQL lives in a new module behind the existing `Ledger` port. The user
 lifted the feature pause for v3 on 2026-11-21 and for v2 on 2026-11-23 (live demo by 1 Dec 2026):
-v3 tasks run first, back to back, then V2-04 to V2-06 (marked "paused until V3-07" so the session
-hook points at the next v3 task). Each task ends with its own PR, merged by `git-ops` on green CI.
+v3 tasks run first, back to back, then V2-04 to V2-06. Each task ends with its own PR, merged by `git-ops` on green CI.
 
 ## 14. Scope (v3)
 
@@ -380,12 +379,12 @@ The GL is keyed by transfer id, so a resend after a lost acknowledgement is harm
 ## 17. Tasks (v3, test-first)
 
 - [x] V3-01 `ledger-postgres` module, Flyway V1 schema, Testcontainers base test, `db` profile, CI on Ubuntu only; ADR-0001 entries (REQ-DB-002, 011, 012)
-- [ ] V3-02 Engine test-jar: ledger property and stress suites shared, in-memory ledgers still green (no behaviour change)
-- [ ] V3-03 `PostgresLedger` pessimistic on the shared suites, opposing-transfer deadlock test, timeouts (REQ-DB-001, 003, 009, 010)
-- [ ] V3-04 Idempotency by `transfer` key: concurrent duplicates, two instances, after restart, a duplicate `REJECTED_FUNDS` returns the stored rejection; README Decisions entry on the idempotency-key rule (REQ-DB-005)
-- [ ] V3-05 Optimistic mode on the same suites, retry with jitter capped at 10, `REJECTED_CONTENTION` in `Outcome` with the engine releasing the claim, the api's 503 + `Retry-After` mapping and its test, conflict count in metrics (REQ-DB-004, 004a, REQ-API-008)
-- [ ] V3-06 Transactional outbox and `OutboxRelay` with `SKIP LOCKED`, two relays, restart and fault drains (REQ-DB-006 to 008)
-- [ ] V3-07 Runner cells for both database modes behind a `--db` option (local only, not in CI; the database tests still run on Ubuntu CI), README Decisions and results, `docs/learn` notes with Oracle equivalents, one TODO-ME per task
+- [x] V3-02 Engine test-jar: ledger property and stress suites shared, in-memory ledgers still green (no behaviour change)
+- [x] V3-03 `PostgresLedger` pessimistic on the shared suites, opposing-transfer deadlock test, timeouts (REQ-DB-001, 003, 009, 010)
+- [x] V3-04 Idempotency by `transfer` key: concurrent duplicates, two instances, after restart, a duplicate `REJECTED_FUNDS` returns the stored rejection; README Decisions entry on the idempotency-key rule (REQ-DB-005)
+- [x] V3-05 Optimistic mode on the same suites, retry with jitter capped at 10, `REJECTED_CONTENTION` in `Outcome` with the engine releasing the claim, the api's 503 + `Retry-After` mapping and its test, conflict count in metrics (REQ-DB-004, 004a, REQ-API-008)
+- [x] V3-06 Transactional outbox and `OutboxRelay` with `SKIP LOCKED`, two relays, restart and fault drains (REQ-DB-006 to 008)
+- [x] V3-07 Runner cells for both database modes behind a `--db` option (local only, not in CI; the database tests still run on Ubuntu CI), README Decisions and results, `docs/learn` notes with Oracle equivalents, one TODO-ME per task
 
 Each task follows the same flow: `test-engineer` writes the failing tests, `database-engineer` or
 `java-engineer` makes them pass, `mvnw verify`, `tutor` writes the `docs/learn` note with Oracle

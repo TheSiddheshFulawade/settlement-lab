@@ -12,7 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * CasLedger-specific behaviour. The shared property and stress suites (via {@link LedgerKind}) prove
+ * CasLedger-specific behaviour. The shared property and stress suites (LedgerPropertiesContract, LedgerStressContract) prove
  * REQ-LAB-002, 003, 005 and 006 for it under concurrency.
  */
 class CasLedgerTest {
