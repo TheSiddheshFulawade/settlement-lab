@@ -121,6 +121,16 @@ What the numbers say (and what they do not):
   posted at most once, postings explain the balances, postings match accepted transfers, and the
   GL holds exactly the ledger's postings.
 
+### Database results
+
+`results/results-db.md` (pessimistic and optimistic PostgreSQL cells) is produced locally, not in CI, with
+the command below (needs Docker). It will be committed after a local run; Docker is currently unavailable,
+so there are no database numbers yet.
+
+```bash
+mvnw.cmd -Pdb -pl ledger-postgres -am test-compile exec:java -Dexec.classpathScope=test -Dexec.mainClass=com.siddheshfulawade.settlementlab.postgres.DbResultsMain
+```
+
 ## How to run
 
 ```bash
@@ -420,3 +430,22 @@ framework-free.
   lease is that it is a time limit: it must be longer than the slowest batch (retries included), or
   duplicates appear, which are harmless but wasted calls. The in-memory `OutboxPublisher` of v1 stays
   for the in-memory ledgers; it loses its queue on a crash, the database outbox does not.
+
+### Database runner cells (V3-07)
+
+- **Chosen:** two small interfaces in the engine's `runner` package, `LedgerFactory` (name, build a fresh
+  ledger from opening balances, optionally a `GlDelivery`) and `GlDelivery` (drain, outbox peak, close).
+  `ScenarioRunner` has one general `run(factory, ...)` path; the in-memory cells wrap `LedgerType` in a
+  factory. The database implementation (`PostgresLedgerFactory`) and the driver (`DbResultsMain`) live in
+  `ledger-postgres` **test** sources, write separate `results-db.md` and `.json`, and run locally only. When
+  a delivery is present the engine gets `PostingPublisher.NONE`, because the outbox relay delivers.
+  **Alternatives:** the engine depends on JDBC and builds the ledger itself; a separate benchmark module
+  using JMH; running the cells in CI. **Why:** the engine promises `java.*` only and ArchUnit enforces it,
+  and the postgres module already depends on the engine, so importing it back would be a cycle; inverting
+  the dependency keeps one runner code path and the same invariant checks for every cell. Test sources keep
+  Testcontainers and Hikari out of the shipped jar. A JMH module is the right tool for micro-benchmarks, but
+  this is a closed-loop scenario run with invariant checks, and it would add a dependency and a module for
+  the same question. CI runs are slow, noisy on shared runners and not comparable between runs, so the
+  correctness test (`DbScenarioRunTest`, tiny cells) runs in CI and the measurement runs locally with the
+  machine written next to the numbers. The cost: the database numbers are one run on one machine, with no
+  warm-up pass, and are not reproducible by a reader without Docker.
