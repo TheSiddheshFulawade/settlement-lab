@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
@@ -29,9 +30,19 @@ public final class DbResultsMain {
     private DbResultsMain() {}
 
     public static void main(String[] args) {
+        // A misspelled option must fail, not silently run the defaults and mislabel committed results.
+        Set<String> known =
+                Set.of("accounts", "transfers", "hot-accounts", "hot-percent", "duplicate-percent", "seed", "out");
+        if (args.length % 2 != 0) {
+            throw new IllegalArgumentException("options come in --name value pairs");
+        }
         Map<String, String> o = new HashMap<>();
-        for (int i = 0; i + 1 < args.length; i += 2) {
-            o.put(args[i].replaceFirst("^--", ""), args[i + 1]);
+        for (int i = 0; i < args.length; i += 2) {
+            String name = args[i].replaceFirst("^--", "");
+            if (!args[i].startsWith("--") || !known.contains(name)) {
+                throw new IllegalArgumentException("unknown option " + args[i] + "; known: " + known);
+            }
+            o.put(name, args[i + 1]);
         }
         Workload workload = new Workload(
                 num(o, "accounts", 1_000),

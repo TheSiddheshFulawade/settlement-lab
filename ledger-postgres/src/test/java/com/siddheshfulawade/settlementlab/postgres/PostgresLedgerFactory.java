@@ -45,14 +45,25 @@ final class PostgresLedgerFactory implements LedgerFactory {
         OutboxRelay relay = new OutboxRelay(dataSource, gl, 100, Duration.ofSeconds(5));
         AtomicBoolean running = new AtomicBoolean(true);
         AtomicLong peak = new AtomicLong();
-        Thread background = Thread.ofPlatform().name("outbox-relay").start(() -> {
-            while (running.get()) {
-                peak.accumulateAndGet(OutboxTestSupport.count(dataSource, "outbox"), Math::max);
-                if (relay.relayOnce() == 0) {
-                    LockSupport.parkNanos(Duration.ofMillis(20).toNanos());
-                }
-            }
-        });
+        // Daemon, and survives a database error: a failed pass backs off and tries again, so the peak keeps
+        // being measured; drain() below is what guarantees delivery either way.
+        Thread background = Thread.ofPlatform()
+                .name("outbox-relay")
+                .daemon(true)
+                .start(() -> {
+                    while (running.get()) {
+                        int published;
+                        try {
+                            peak.accumulateAndGet(OutboxTestSupport.count(dataSource, "outbox"), Math::max);
+                            published = relay.relayOnce();
+                        } catch (RuntimeException e) {
+                            published = 0;
+                        }
+                        if (published == 0) {
+                            LockSupport.parkNanos(Duration.ofMillis(20).toNanos());
+                        }
+                    }
+                });
         return Optional.of(new GlDelivery() {
             @Override
             public boolean drain(Duration timeout) {
