@@ -25,4 +25,12 @@ class ApplyResultTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> ApplyResult.rejected(Outcome.QUEUE_FULL)).isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    @DisplayName("REQ-DB-004a a ledger may answer REJECTED_CONTENTION, without a posting")
+    void ledgerMayAnswerContention() {
+        assertThat(ApplyResult.rejected(Outcome.REJECTED_CONTENTION).posting()).isEmpty();
+        assertThatThrownBy(() -> new ApplyResult(Outcome.REJECTED_CONTENTION, Optional.of(POSTING)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

@@ -376,3 +376,23 @@ framework-free.
   an error path and a choice of fields; the id alone is the key, and a caller such as the API can
   compare payloads itself. Known limit: a duplicate waiting behind a stuck original gives up at
   `lock_timeout` and may be retried safely.
+
+### Optimistic PostgreSQL ledger (V3-05)
+
+- **Chosen:** a `version` column on `account` and a conditional write, `UPDATE ... SET balance = ?,
+  version = version + 1 WHERE id = ? AND version = ?`, one per account, lower id first. The read takes
+  no lock. Zero rows changed means someone wrote first: the whole attempt rolls back (claim included)
+  and retries after a full-jitter back-off (a random sleep from 0 to `min(50 ms, 1 ms * 2^(n-1))`),
+  at most 10 attempts. Then the answer is `REJECTED_CONTENTION`, which stores nothing, so the id stays
+  free: the engine releases its in-memory claim and the API answers `503` with `Retry-After`, and the
+  client retries with the same id. **Alternatives:** `SERIALIZABLE` with retry on `40001`; unbounded
+  retries; a fixed back-off; falling back to pessimistic locking after N conflicts. **Why:** the
+  version check refuses any write based on a stale read, so `READ COMMITTED` is enough and no lock is
+  held while the transfer is being worked out; under low contention that is cheaper than queueing on
+  row locks. Ascending-order updates keep the short row locks deadlock-free. `SERIALIZABLE` makes the
+  database detect conflicts for us but aborts more broadly and hides which statement lost. Unbounded
+  retries can hold a worker forever on a hot account and add load to it, so a cap turns "too busy"
+  into a clear, retryable answer. A fixed back-off makes colliding transfers wake together and
+  collide again; jitter spreads them. Falling back to pessimistic mid-flight would mix two protocols
+  in one ledger and blur what the benchmark measures; the two modes are compared side by side in V3-07
+  instead. `@Version` (JPA) is the same idea with the SQL hidden.

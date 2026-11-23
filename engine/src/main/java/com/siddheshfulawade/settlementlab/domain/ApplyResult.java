@@ -16,7 +16,10 @@ public record ApplyResult(Outcome outcome, Optional<Posting> posting) {
         if ((outcome == Outcome.POSTED) != posting.isPresent()) {
             throw new IllegalArgumentException("a posting must be present exactly when the outcome is POSTED");
         }
-        if (outcome != Outcome.POSTED && outcome != Outcome.REJECTED_FUNDS && outcome != Outcome.REJECTED_INVALID) {
+        if (outcome != Outcome.POSTED
+                && outcome != Outcome.REJECTED_FUNDS
+                && outcome != Outcome.REJECTED_INVALID
+                && outcome != Outcome.REJECTED_CONTENTION) {
             throw new IllegalArgumentException("a ledger never answers " + outcome);
         }
     }

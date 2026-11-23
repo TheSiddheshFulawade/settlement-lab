@@ -19,6 +19,7 @@ class TransferResponsesTest {
         assertThat(TransferResponses.statusFor(Outcome.REJECTED_FUNDS)).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(TransferResponses.statusFor(Outcome.REJECTED_INVALID)).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(TransferResponses.statusFor(Outcome.QUEUE_FULL)).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(TransferResponses.statusFor(Outcome.REJECTED_CONTENTION)).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
         assertThat(TransferResponses.statusFor(Outcome.DUPLICATE)).isEqualTo(HttpStatus.OK);
     }
 
@@ -30,6 +31,17 @@ class TransferResponsesTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
         assertThat(response.getHeaders().getFirst("Retry-After")).isEqualTo("1");
         assertThat(response.getBody()).isEqualTo(new TransferResponse("q-1", Outcome.QUEUE_FULL, null));
+    }
+
+    @Test
+    @DisplayName("REQ-API-008 REJECTED_CONTENTION is 503 with Retry-After, like QUEUE_FULL")
+    void contentionHasRetryAfter() {
+        ResponseEntity<TransferResponse> response =
+                TransferResponses.of("c-1", Outcome.REJECTED_CONTENTION, Optional.empty());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getHeaders().getFirst("Retry-After")).isEqualTo("1");
+        assertThat(response.getBody()).isEqualTo(new TransferResponse("c-1", Outcome.REJECTED_CONTENTION, null));
     }
 
     @Test
