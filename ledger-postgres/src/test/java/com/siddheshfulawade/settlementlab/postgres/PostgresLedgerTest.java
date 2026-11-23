@@ -35,8 +35,9 @@ import org.junit.jupiter.api.Test;
  * <p>Implementer note on the {@code transfer} table: these tests REQUIRE the step-1 row of 16.3 for
  * POSTED and REJECTED_FUNDS (outcome stored, posting_seq set only when posted). They do not test
  * duplicates: V3-04 adds that. For V3-03 a fresh id per transfer is enough, but the row must be
- * written now so V3-04 only adds the conflict handling. For REJECTED_INVALID the design stores
- * nothing specific, so only "no balance or posting changes" is asserted. The outbox row (REQ-DB-006)
+ * written now so V3-04 only adds the conflict handling. For REJECTED_INVALID only "no balance or
+ * posting changes" is asserted here; that an unknown account stores REJECTED_INVALID on its transfer
+ * row while validator rejections store nothing is PostgresIdempotencyTest's job. The outbox row (REQ-DB-006)
  * is V3-06 and is not required here, except that a rejection writes none.
  */
 class PostgresLedgerTest extends PostgresTestBase {
