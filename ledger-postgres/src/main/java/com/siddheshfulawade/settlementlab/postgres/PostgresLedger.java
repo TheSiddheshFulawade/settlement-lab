@@ -290,8 +290,9 @@ public final class PostgresLedger implements Ledger {
         // Invariant (no deadlock): the UPDATEs lock rows, so they run lower id first, like the
         // pessimistic FOR UPDATE. A transaction holding row k only waits for a row above k, so the
         // waits always climb and never close a cycle.
-        long sourceBalance = source.balance() - amount;
-        long targetBalance = target.balance() + amount;
+        // addExact: an overflowing target balance must fail loudly, not wrap to a negative number.
+        long sourceBalance = Math.subtractExact(source.balance(), amount);
+        long targetBalance = Math.addExact(target.balance(), amount);
         boolean bothUpdated = transfer.source().value() < transfer.target().value()
                 ? versionedUpdate(connection, transfer.source(), sourceBalance, source.version())
                         && versionedUpdate(connection, transfer.target(), targetBalance, target.version())

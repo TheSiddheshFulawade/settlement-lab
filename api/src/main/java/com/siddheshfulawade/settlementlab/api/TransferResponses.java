@@ -9,7 +9,7 @@ import org.springframework.http.ResponseEntity;
 /** Outcome to HTTP status (REQ-API-001), in one place so it is easy to read and to test. */
 final class TransferResponses {
 
-    /** Seconds a client should wait after QUEUE_FULL before retrying with the same id. */
+    /** Seconds a client should wait after QUEUE_FULL or REJECTED_CONTENTION before retrying with the same id. */
     static final String RETRY_AFTER_SECONDS = "1";
 
     private TransferResponses() {}
