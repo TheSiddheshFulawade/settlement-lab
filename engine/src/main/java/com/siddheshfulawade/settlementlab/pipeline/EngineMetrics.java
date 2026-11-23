@@ -10,6 +10,7 @@ public record EngineMetrics(
         long rejectedFunds,
         long rejectedInvalid,
         long queueFull,
+        long rejectedContention,
         long duplicates,
         long failed,
         long listenerErrors,

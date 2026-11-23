@@ -23,17 +23,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.function.IntConsumer;
 import javax.sql.DataSource;
 
 /**
  * A {@link Ledger} whose balances, transfers and postings live in PostgreSQL (SPEC.md 16.3), with
  * plain JDBC so every statement and lock is visible.
  *
+ * <p>Two modes ({@link LockMode}). <b>Pessimistic</b>: lock both account rows with {@code SELECT ...
+ * FOR UPDATE}, lower id first, then check and update. <b>Optimistic</b>: read both rows without a
+ * lock, then update each only {@code WHERE version = ?} the version that was read; if either update
+ * changes zero rows someone else wrote first, so the whole attempt rolls back and is retried after a
+ * jittered back-off, at most {@value #MAX_OPTIMISTIC_ATTEMPTS} attempts (REQ-DB-004, 004a).
+ *
  * <p><b>Isolation: READ COMMITTED</b>, set explicitly on every transaction so a pool configured
  * otherwise cannot change the behaviour. It is enough because correctness does not rest on what a
- * snapshot shows: the row locks serialise every writer of an account, and {@code SELECT ... FOR
- * UPDATE} returns the latest committed balance after it waits. SERIALIZABLE would add 40001
- * retries for no extra safety. Oracle: READ COMMITTED is its default, with the same row-lock rules.
+ * snapshot shows: in pessimistic mode the row locks serialise every writer of an account, and {@code
+ * SELECT ... FOR UPDATE} returns the latest committed balance after it waits; in optimistic mode the
+ * version check refuses any write based on a stale read. SERIALIZABLE would add 40001 retries for no
+ * extra safety. Oracle: READ COMMITTED is its default, with the same row-lock rules.
  *
  * <p><b>One connection per call</b>, taken from the caller's pool and handed back before the call
  * returns, never two at once: a call that held one connection while waiting for a second could
@@ -48,6 +59,15 @@ public final class PostgresLedger implements Ledger {
     static final Duration DEFAULT_LOCK_TIMEOUT = Duration.ofSeconds(5);
 
     static final Duration DEFAULT_STATEMENT_TIMEOUT = Duration.ofSeconds(30);
+
+    /** REQ-DB-004a: after this many conflicting attempts the answer is REJECTED_CONTENTION. */
+    static final int MAX_OPTIMISTIC_ATTEMPTS = 10;
+
+    /** Back-off ceiling after the first conflict; it doubles per conflict up to the cap. */
+    static final Duration BACKOFF_BASE = Duration.ofMillis(1);
+
+    /** The longest single back-off: nine back-offs (no sleep after the tenth) stay well under 1 s. */
+    static final Duration BACKOFF_CAP = Duration.ofMillis(50);
 
     /**
      * Step 1: claim the transfer id. Zero rows inserted means the id is already recorded. ON CONFLICT
@@ -68,6 +88,19 @@ public final class PostgresLedger implements Ledger {
     /** Relative change, so the database does the arithmetic on the row it has locked. */
     private static final String MOVE_MONEY = "UPDATE account SET balance = balance + ? WHERE id = ?";
 
+    /**
+     * Optimistic step 2: both rows in one statement, so both come from one snapshot. No FOR UPDATE:
+     * this read takes no lock and never waits for a writer. Oracle: the same plain SELECT.
+     */
+    private static final String READ_ACCOUNTS = "SELECT id, balance, version FROM account WHERE id IN (?, ?)";
+
+    /**
+     * Optimistic step 3, once per account. Zero rows changed means the version moved since the read.
+     * Oracle: the same statement; SQL%ROWCOUNT (or the JDBC update count) is 0 on a conflict.
+     */
+    private static final String VERSIONED_UPDATE =
+            "UPDATE account SET balance = ?, version = version + 1 WHERE id = ? AND version = ?";
+
     private static final String INSERT_POSTING =
             "INSERT INTO posting (transfer_id, source, target, amount) VALUES (?, ?, ?, ?) RETURNING seq";
 
@@ -81,6 +114,14 @@ public final class PostgresLedger implements Ledger {
     private static final String POSTINGS = "SELECT seq, transfer_id, source, target, amount FROM posting ORDER BY seq";
 
     private final DataSource dataSource;
+
+    private final LockMode mode;
+
+    /** Failed optimistic attempts (each rolled back), retried or not. Always 0 in pessimistic mode. */
+    private final LongAdder conflicts = new LongAdder();
+
+    /** Test seam: runs after the optimistic read, before the versioned updates. Default: nothing. */
+    private volatile IntConsumer afterReadHook = attempt -> {};
 
     /**
      * Sent first in every transaction. SET LOCAL lasts until COMMIT or ROLLBACK, so the limits never
@@ -101,10 +142,7 @@ public final class PostgresLedger implements Ledger {
      */
     public PostgresLedger(DataSource dataSource, LockMode mode, Duration lockTimeout, Duration statementTimeout) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
-        Objects.requireNonNull(mode, "mode");
-        if (mode == LockMode.OPTIMISTIC) {
-            throw new UnsupportedOperationException("optimistic mode arrives in V3-05");
-        }
+        this.mode = Objects.requireNonNull(mode, "mode");
         this.transactionSettings = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED;"
                 + " SET LOCAL lock_timeout = '" + millis("lockTimeout", lockTimeout) + "ms';"
                 + " SET LOCAL statement_timeout = '" + millis("statementTimeout", statementTimeout) + "ms'";
@@ -124,11 +162,11 @@ public final class PostgresLedger implements Ledger {
     }
 
     /**
-     * One transaction, SPEC.md 16.3. Every outcome that reaches the database is stored on the id's
-     * {@code transfer} row and replayed for the same id (REQ-DB-005): POSTED, REJECTED_FUNDS, and
-     * REJECTED_INVALID for an unknown account. A lock or statement timeout, or any other error, rolls
-     * everything back, the claim included, and throws {@link LedgerDatabaseException}; the id stays
-     * free, so the same id can then be retried.
+     * SPEC.md 16.3. Every outcome that reaches the database is stored on the id's {@code transfer}
+     * row and replayed for the same id (REQ-DB-005): POSTED, REJECTED_FUNDS, and REJECTED_INVALID for
+     * an unknown account. A lock or statement timeout, or any other error, rolls everything back, the
+     * claim included, and throws {@link LedgerDatabaseException}; the id stays free, so the same id
+     * can then be retried. Optimistic mode may also answer REJECTED_CONTENTION, which stores nothing.
      */
     @Override
     public ApplyResult applyWithResult(Transfer transfer) {
@@ -138,6 +176,11 @@ public final class PostgresLedger implements Ledger {
         if (TransferValidator.validate(transfer, id -> true).isPresent()) {
             return ApplyResult.rejected(Outcome.REJECTED_INVALID);
         }
+        return mode == LockMode.PESSIMISTIC ? applyPessimistic(transfer) : applyOptimistic(transfer);
+    }
+
+    /** One transaction: claim, lock both rows lower id first, check, move, post, record. */
+    private ApplyResult applyPessimistic(Transfer transfer) {
         return inTransaction("apply transfer " + transfer.id(), connection -> {
             // Step 1. Invariant (REQ-DB-005): one transaction per id gets past this line. A concurrent
             // insert of the same id waits here, on the primary key, until the other transaction ends:
@@ -176,6 +219,183 @@ public final class PostgresLedger implements Ledger {
             recordOutcome(connection, transfer.id(), Outcome.POSTED, posting.sequence());
             return ApplyResult.posted(posting);
         });
+    }
+
+    /**
+     * Up to {@value #MAX_OPTIMISTIC_ATTEMPTS} attempts, each its own short transaction on its own
+     * borrowed connection. The back-off sleeps BETWEEN transactions, with the connection handed back
+     * and no lock or claim held, so a waiting transfer never pins a pool connection or a row.
+     */
+    private ApplyResult applyOptimistic(Transfer transfer) {
+        for (int attempt = 1; attempt <= MAX_OPTIMISTIC_ATTEMPTS; attempt++) {
+            int thisAttempt = attempt;
+            try {
+                return inTransaction(
+                        "apply transfer " + transfer.id() + " (attempt " + attempt + ")",
+                        connection -> optimisticAttempt(connection, transfer, thisAttempt));
+            } catch (VersionConflict conflict) {
+                // inTransaction has already rolled back: balances, posting AND the claim row are gone,
+                // so a concurrent duplicate waiting on the claim now goes ahead with a clean slate.
+                conflicts.increment();
+            }
+            if (attempt < MAX_OPTIMISTIC_ATTEMPTS && !backOff(attempt)) {
+                break; // interrupted: stop retrying and answer as if the attempts ran out
+            }
+        }
+        // REQ-DB-004a: nothing is stored for the id (every attempt rolled back), so it stays free and
+        // the engine releases its in-memory claim; a later retry with the same id is processed fresh.
+        return ApplyResult.rejected(Outcome.REJECTED_CONTENTION);
+    }
+
+    /**
+     * One optimistic attempt. Throws {@link VersionConflict} when either versioned update changes no
+     * row, so {@link #inTransaction} rolls the whole attempt back, the claim included.
+     */
+    private ApplyResult optimisticAttempt(Connection connection, Transfer transfer, int attempt) throws SQLException {
+        // Step 1, exactly as in pessimistic mode (REQ-DB-005): one transaction per id gets past here.
+        // A concurrent duplicate waits on our uncommitted claim row; if this attempt conflicts and
+        // rolls back, the claim disappears and the duplicate's insert goes ahead instead.
+        if (!claim(connection, transfer.id())) {
+            return storedResult(connection, transfer.id());
+        }
+
+        // Step 2: a plain read, no row lock. Another transaction may change these rows from here on.
+        Map<Long, VersionedBalance> read = readAccounts(connection, transfer);
+        afterReadHook.accept(attempt);
+        if (read.size() < 2) {
+            // Unknown source or target: stored, as in pessimistic mode (REQ-DB-005).
+            recordOutcome(connection, transfer.id(), Outcome.REJECTED_INVALID, null);
+            return ApplyResult.rejected(Outcome.REJECTED_INVALID);
+        }
+
+        // Both rows came from one statement, so from one snapshot: at that instant the source really
+        // held this balance. A rejection writes no account, so it is correct as of the read and is
+        // stored (REQ-DB-005); a posting is checked against later writes by the version below.
+        long amount = transfer.amount().minorUnits();
+        VersionedBalance source = read.get(transfer.source().value());
+        VersionedBalance target = read.get(transfer.target().value());
+        if (source.balance() < amount) {
+            recordOutcome(connection, transfer.id(), Outcome.REJECTED_FUNDS, null);
+            return ApplyResult.rejected(Outcome.REJECTED_FUNDS);
+        }
+
+        // Step 3. Invariant (REQ-DB-004, no lost update): each new balance is computed from the read
+        // and written only WHERE the version is still the one read. Any transfer that wrote the row
+        // since then raised the version when it committed, so our update changes zero rows and the
+        // stale result is never written. If that writer has not committed yet, our UPDATE waits for
+        // its row lock and then, in READ COMMITTED, re-checks the WHERE against the row it left:
+        // committed, the version moved and we change zero rows; rolled back, the version still matches.
+        // (Oracle: same outcome; its write consistency restarts the UPDATE when the row changed.)
+        //
+        // Invariant (no deadlock): the UPDATEs lock rows, so they run lower id first, like the
+        // pessimistic FOR UPDATE. A transaction holding row k only waits for a row above k, so the
+        // waits always climb and never close a cycle.
+        long sourceBalance = source.balance() - amount;
+        long targetBalance = target.balance() + amount;
+        boolean bothUpdated = transfer.source().value() < transfer.target().value()
+                ? versionedUpdate(connection, transfer.source(), sourceBalance, source.version())
+                        && versionedUpdate(connection, transfer.target(), targetBalance, target.version())
+                : versionedUpdate(connection, transfer.target(), targetBalance, target.version())
+                        && versionedUpdate(connection, transfer.source(), sourceBalance, source.version());
+        if (!bothUpdated) {
+            throw VersionConflict.INSTANCE;
+        }
+        Posting posting = insertPosting(connection, transfer);
+        recordOutcome(connection, transfer.id(), Outcome.POSTED, posting.sequence());
+        return ApplyResult.posted(posting);
+    }
+
+    /** A balance and the version it was read at. */
+    private record VersionedBalance(long balance, long version) {}
+
+    /** Account id to balance and version, for the accounts that exist (0, 1 or 2), with no lock. */
+    private static Map<Long, VersionedBalance> readAccounts(Connection connection, Transfer transfer)
+            throws SQLException {
+        Map<Long, VersionedBalance> rows = new LinkedHashMap<>();
+        try (PreparedStatement select = connection.prepareStatement(READ_ACCOUNTS)) {
+            select.setLong(1, transfer.source().value());
+            select.setLong(2, transfer.target().value());
+            try (ResultSet result = select.executeQuery()) {
+                while (result.next()) {
+                    rows.put(result.getLong(1), new VersionedBalance(result.getLong(2), result.getLong(3)));
+                }
+            }
+        }
+        return rows;
+    }
+
+    /**
+     * True when the row still had {@code expectedVersion} and now holds {@code newBalance}. The CHECK
+     * (balance >= 0) still backs the funds check: a negative value fails with 23514 and rolls back.
+     */
+    private static boolean versionedUpdate(Connection connection, AccountId id, long newBalance, long expectedVersion)
+            throws SQLException {
+        try (PreparedStatement update = connection.prepareStatement(VERSIONED_UPDATE)) {
+            update.setLong(1, newBalance);
+            update.setLong(2, id.value());
+            update.setLong(3, expectedVersion);
+            return update.executeUpdate() == 1;
+        }
+    }
+
+    /**
+     * Full jitter: sleeps a uniformly random time from 0 to {@link #backoffCeiling}. The randomness
+     * spreads out transfers that collided, so they do not all retry at the same instant and collide
+     * again. No minimum is promised, so a plain sleep is right here. Runs with no transaction open.
+     * Returns false if interrupted, with the interrupt flag restored.
+     */
+    private static boolean backOff(int failedAttempts) {
+        long ceilingNanos = backoffCeiling(failedAttempts).toNanos();
+        try {
+            TimeUnit.NANOSECONDS.sleep(ThreadLocalRandom.current().nextLong(ceilingNanos + 1));
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    /**
+     * The longest back-off after {@code failedAttempts} conflicts: {@code min(cap, base * 2^(n - 1))},
+     * so 1, 2, 4, 8, 16, 32, then 50 ms. Nine back-offs at most, so under 0.25 s in total.
+     */
+    static Duration backoffCeiling(int failedAttempts) {
+        if (failedAttempts < 1) {
+            throw new IllegalArgumentException("failedAttempts must be at least 1: " + failedAttempts);
+        }
+        // Capping the shift keeps it far from overflow; the cap is reached long before 20 doublings.
+        Duration doubled = BACKOFF_BASE.multipliedBy(1L << Math.min(failedAttempts - 1, 20));
+        return doubled.compareTo(BACKOFF_CAP) < 0 ? doubled : BACKOFF_CAP;
+    }
+
+    /**
+     * How many optimistic attempts so far changed zero rows and were rolled back, retried or not
+     * (REQ-DB-004). Always 0 in pessimistic mode.
+     */
+    public long conflicts() {
+        return conflicts.sum();
+    }
+
+    /**
+     * Test seam: in optimistic mode, {@code hook} runs on every attempt (argument: the attempt number,
+     * from 1) on the calling thread, after the unlocked read and before the versioned updates, while
+     * the attempt's transaction is open. A test commits a rival write inside it to force a conflict.
+     */
+    void afterReadHook(IntConsumer hook) {
+        this.afterReadHook = Objects.requireNonNull(hook, "hook");
+    }
+
+    /**
+     * Carries "a versioned update changed zero rows" out of the transaction so that it rolls back. Not
+     * an error and never leaves this class, so one shared instance without a stack trace is enough.
+     */
+    private static final class VersionConflict extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        private static final VersionConflict INSTANCE = new VersionConflict();
+
+        private VersionConflict() {
+            super("optimistic version conflict", null, false, false);
+        }
     }
 
     private static boolean claim(Connection connection, TransferId id) throws SQLException {

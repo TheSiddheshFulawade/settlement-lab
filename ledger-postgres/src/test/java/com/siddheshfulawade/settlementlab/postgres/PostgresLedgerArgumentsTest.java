@@ -61,9 +61,10 @@ class PostgresLedgerArgumentsTest {
     }
 
     @Test
-    void optimistic_mode_is_not_built_yet() {
-        // V3-05 replaces this test with the optimistic suites.
-        assertThatThrownBy(() -> new PostgresLedger(UNTOUCHED, LockMode.OPTIMISTIC))
-                .isInstanceOf(UnsupportedOperationException.class);
+    void REQ_DB_004_optimistic_mode_is_accepted_and_the_constructor_still_touches_nothing() {
+        assertThatCode(() -> new PostgresLedger(UNTOUCHED, LockMode.OPTIMISTIC)).doesNotThrowAnyException();
+        assertThatCode(() -> new PostgresLedger(
+                        UNTOUCHED, LockMode.OPTIMISTIC, Duration.ofMillis(1), Duration.ofMillis(Integer.MAX_VALUE)))
+                .doesNotThrowAnyException();
     }
 }

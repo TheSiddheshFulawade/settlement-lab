@@ -9,7 +9,8 @@ public enum LockMode {
     PESSIMISTIC,
     /**
      * Version column: {@code UPDATE ... WHERE id = ? AND version = ?}, retried when it changes zero rows
-     * (REQ-DB-004). Nothing waits; a loser retries. Arrives in V3-05.
+     * (REQ-DB-004), with jittered back-off, at most 10 attempts, then REJECTED_CONTENTION (REQ-DB-004a).
+     * The read takes no lock; only the short UPDATEs do. Oracle: the same version column and UPDATE.
      */
     OPTIMISTIC
 }

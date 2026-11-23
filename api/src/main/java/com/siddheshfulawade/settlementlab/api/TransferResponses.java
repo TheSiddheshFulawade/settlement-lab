@@ -19,7 +19,7 @@ final class TransferResponses {
             case POSTED -> HttpStatus.CREATED;
             case REJECTED_FUNDS -> HttpStatus.UNPROCESSABLE_CONTENT;
             case REJECTED_INVALID -> HttpStatus.BAD_REQUEST;
-            case QUEUE_FULL -> HttpStatus.SERVICE_UNAVAILABLE;
+            case QUEUE_FULL, REJECTED_CONTENTION -> HttpStatus.SERVICE_UNAVAILABLE;
             // The engine answers a duplicate with the original outcome, so this is not expected.
             case DUPLICATE -> HttpStatus.OK;
         };
@@ -29,7 +29,8 @@ final class TransferResponses {
         String why =
                 outcome == Outcome.REJECTED_INVALID ? reason.map(Enum::name).orElse(null) : null;
         ResponseEntity.BodyBuilder builder = ResponseEntity.status(statusFor(outcome));
-        if (outcome == Outcome.QUEUE_FULL) {
+        // Both store nothing and release the id, so the client may retry with the same id.
+        if (outcome == Outcome.QUEUE_FULL || outcome == Outcome.REJECTED_CONTENTION) {
             builder.header("Retry-After", RETRY_AFTER_SECONDS);
         }
         return builder.body(new TransferResponse(id, outcome, why));

@@ -62,6 +62,7 @@ public final class SettlementEngine implements AutoCloseable {
     private final LongAdder rejectedFunds = new LongAdder();
     private final LongAdder rejectedInvalid = new LongAdder();
     private final LongAdder queueFull = new LongAdder();
+    private final LongAdder rejectedContention = new LongAdder();
     private final LongAdder failed = new LongAdder();
     private final LongAdder listenerErrors = new LongAdder();
     private final LongAdder publishErrors = new LongAdder();
@@ -139,6 +140,11 @@ public final class SettlementEngine implements AutoCloseable {
             }
             Outcome outcome = result.outcome();
             count(outcome);
+            if (outcome == Outcome.REJECTED_CONTENTION) {
+                // Invariant: nothing was stored, so the id must not stay claimed. Release it before
+                // completing the future, so a caller that retries at once is processed fresh.
+                idempotency.release(job.transfer().id(), job.claim());
+            }
             job.claim().outcome().complete(outcome);
             result.posting().ifPresent(this::publish);
             tellListener(job.transfer(), outcome);
@@ -152,6 +158,7 @@ public final class SettlementEngine implements AutoCloseable {
             case POSTED -> posted.increment();
             case REJECTED_FUNDS -> rejectedFunds.increment();
             case REJECTED_INVALID -> rejectedInvalid.increment();
+            case REJECTED_CONTENTION -> rejectedContention.increment();
             default -> throw new IllegalStateException("a ledger never answers " + outcome);
         }
     }
@@ -239,6 +246,7 @@ public final class SettlementEngine implements AutoCloseable {
                 rejectedFunds.sum(),
                 rejectedInvalid.sum(),
                 queueFull.sum(),
+                rejectedContention.sum(),
                 idempotency.duplicates(),
                 failed.sum(),
                 listenerErrors.sum(),

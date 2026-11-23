@@ -66,7 +66,11 @@ public final class ScenarioRunner {
                     Math.round(workload.transfers() / (elapsed / 1e9)),
                     Percentiles.of(latencies, 50) / 1_000,
                     Percentiles.of(latencies, 99) / 1_000,
-                    metrics.rejectedFunds() + metrics.rejectedInvalid() + metrics.queueFull(),
+                    metrics.rejectedFunds()
+                            + metrics.rejectedInvalid()
+                            + metrics.queueFull()
+                            // contention is a refusal that stored nothing, like queue-full
+                            + metrics.rejectedContention(),
                     metrics.duplicates(),
                     resilient.retries(),
                     resilient.breakerOpens(),
