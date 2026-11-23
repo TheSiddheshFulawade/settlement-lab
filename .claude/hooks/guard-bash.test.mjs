@@ -195,3 +195,67 @@ test("other global or system git config writes ask the user", () => {
   const local = run("git config user.name");
   assert.ok(!local.blocked && !local.asked, "a local read neither blocks nor asks");
 });
+
+// ---- Security-audit bypasses (2026-11-23): each was allowed before the fix ----------------------
+
+test("force pushes in every spelling are blocked", () => {
+  for (const command of [
+    "git push -uf origin feature/x",
+    "git push origin +feature/x",
+    "git push --force-if-includes origin feature/x",
+    "git push --force-with-lease origin feature/x",
+  ]) {
+    assertBlocked(command, /force push/);
+  }
+  for (const command of ["git push -u origin feature/v3-02-fix-suites", "git push -u origin fix/flaky-test --follow-tags"]) {
+    assertNotBlocked(command);
+  }
+});
+
+test("pushes to main in quoted, forced or dry-run-disguised forms are blocked", () => {
+  for (const command of [
+    "git push origin +main",
+    'git push origin "main"',
+    "git push origin 'main'",
+    "git push origin main && echo --dry-run",
+    "git push origin main # --dry-run",
+    "git push --all origin",
+  ]) {
+    assertBlocked(command);
+  }
+  assertNotBlocked("git push --dry-run origin main");
+});
+
+test("pushing the current branch is judged by that branch", (t) => {
+  const main = repoOn("main");
+  const feat = repoOn("feature/v3-02-shared-suites");
+  t.after(() => [main, feat].forEach((d) => rmSync(d, { recursive: true, force: true })));
+  for (const command of ["git push", "git push origin", "git push -u origin HEAD"]) {
+    assert.ok(run(command, main).blocked, `on main: ${command}`);
+    assert.ok(!run(command, feat).blocked, `on a work branch: ${command}`);
+  }
+});
+
+test("a commit whose directory is ambiguous is blocked if any candidate is on main", (t) => {
+  const main = repoOn("main");
+  const feat = repoOn("feature/x");
+  t.after(() => [main, feat].forEach((d) => rmSync(d, { recursive: true, force: true })));
+  for (const command of [
+    `(cd "${feat}") && git commit -m x`,
+    `pushd "${feat}" && popd && git commit -m x`,
+    `cd "${feat}" && cd - && git commit -m x`,
+    `cd "${feat}"\ncd "${main}"\ngit commit -m x`,
+    `GIT_DIR="${main}/.git" git -C "${feat}" commit -m x`,
+    `git --git-dir="${main}/.git" commit -m x`,
+  ]) {
+    assert.ok(run(command, main).blocked, command);
+  }
+  assert.ok(!run(`cd "${feat}" && git commit -m x`, main).blocked, "a plain cd to a work branch is allowed");
+});
+
+test("reading .env through git is blocked", () => {
+  for (const command of ["git diff --no-index .env /dev/null", "git show HEAD:.env", "git log -p -- .env.local"]) {
+    assertBlocked(command, /\.env/);
+  }
+  assertNotBlocked("git diff --stat origin/main...HEAD");
+});
