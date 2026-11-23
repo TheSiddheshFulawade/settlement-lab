@@ -6,7 +6,6 @@
 curl -N localhost:8080/api/v1/events
 # :connected
 # event:outcome
-# id:t-1
 # data:{"id":"t-1","outcome":"POSTED","source":1,"target":2,"amount":100}
 ```
 
@@ -23,8 +22,11 @@ curl -N localhost:8080/api/v1/events
   interface (`send`, `close`), so `EventHub` is tested without HTTP. It sends a `:connected` comment
   first (`EventStreamController.java:31`): servers send SSE headers only with the first bytes, so
   without it a client would not know the stream is open until the first transfer.
-- Shutdown order: Spring closes the runtime first (it depends on the hub), so the engine stops
-  producing events before the hub closes the streams.
+- No SSE `id:` field: the transfer id is client input and a line separator in it makes the emitter
+  throw, which would drop every subscriber. The id travels in the JSON data instead.
+- Shutdown: `EventStreamShutdown` closes the hub on `ContextClosedEvent`, which Spring publishes before
+  the web server's graceful phase starts waiting. Otherwise an idle stream would hold shutdown for the
+  whole phase timeout. Accepted transfers still drain; events for a closed hub reach nobody.
 
 ## The core concept: the engine thread must never wait
 

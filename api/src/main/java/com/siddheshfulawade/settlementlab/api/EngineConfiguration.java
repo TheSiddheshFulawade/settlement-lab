@@ -12,10 +12,20 @@ class EngineConfiguration {
     /** Events per stream subscriber that may wait before the subscriber counts as too slow. */
     static final int EVENT_BUFFER = 1_024;
 
-    /** Closed after the runtime (it depends on the hub), so no event is sent to a closed hub. */
+    /**
+     * {@link EventStreamShutdown} closes the hub when shutdown starts, so the engine may still report
+     * outcomes to a closed hub while accepted transfers drain; that is harmless (no subscribers). The
+     * destroy method closes it again, which is idempotent.
+     */
     @Bean(destroyMethod = "close")
     EventHub eventHub() {
         return new EventHub(EVENT_BUFFER);
+    }
+
+    /** Ends idle streams before the web server's graceful shutdown starts waiting for them. */
+    @Bean
+    EventStreamShutdown eventStreamShutdown(EventHub eventHub) {
+        return new EventStreamShutdown(eventHub);
     }
 
     /** Spring calls {@link SettlementRuntime#close()} on shutdown, after in-flight requests finish. */

@@ -36,7 +36,10 @@ class EventStreamController {
         Runnable cancel = hub.subscribe(new EventHub.Sink() {
             @Override
             public void send(OutcomeEvent event) throws Exception {
-                emitter.send(SseEmitter.event().name("outcome").id(event.id()).data(event, MediaType.APPLICATION_JSON));
+                // No SSE "id:" field: the transfer id is client input and may hold a line separator,
+                // which makes the emitter throw and would drop every subscriber. The id is in the JSON
+                // data (escaped there); there is no resume support, so the field has no use.
+                emitter.send(SseEmitter.event().name("outcome").data(event, MediaType.APPLICATION_JSON));
             }
 
             @Override

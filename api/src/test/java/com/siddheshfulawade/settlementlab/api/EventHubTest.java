@@ -125,7 +125,7 @@ class EventHubTest {
 
         hub.close();
 
-        assertThat(sink.closed).isTrue();
+        await().atMost(WAIT).until(sink.closed::get); // drop() closes on its own virtual thread
         assertThat(hub.subscribers()).isZero();
         hub.onOutcome(transfer(1), Outcome.POSTED); // no subscribers left: nothing happens
     }
