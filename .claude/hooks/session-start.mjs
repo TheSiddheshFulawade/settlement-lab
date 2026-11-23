@@ -24,11 +24,17 @@ export function latestHandoff(names) {
     .at(-1);
 }
 
-/** Done and open counts from SPEC.md checkbox lines, plus the first open task. */
+/** A task line such as "- [ ] V2-04 (paused until V3-07) …" is on hold and is never "next". */
+const PAUSED = /\(paused\b/i;
+
+/** Done and open counts from SPEC.md checkbox lines, plus the first open task that is not paused. */
 export function taskSummary(text) {
   const done = (text.match(/^\s*- \[x\]/gim) ?? []).length;
   const open = text.match(/^\s*- \[ \].*$/gm) ?? [];
-  const next = open[0]?.replace(/^\s*- \[ \]\s*/, "").slice(0, 100);
+  const next = open
+    .find((line) => !PAUSED.test(line))
+    ?.replace(/^\s*- \[ \]\s*/, "")
+    .slice(0, 100);
   return { done, open: open.length, next };
 }
 

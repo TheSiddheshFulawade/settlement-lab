@@ -44,9 +44,9 @@ India reach Singapore in about 60 ms.
 
 ## Alternatives considered
 
-- **Oracle Cloud Always Free VM** (app and PostgreSQL on one server): free and always on, but 2026
-  reports describe Always Free Ampere instances being disabled after limit changes and idle instances
-  reclaimed, and a VM must be patched and secured by hand. Rejected for reliability.
+- **Oracle Cloud Always Free VM** (app and PostgreSQL on one server): free and always on, but a VM
+  must be patched, secured and monitored by hand, and free-tier capacity and idle rules are outside
+  our control. Not chosen.
 - **Render free**: sleeps after 15 minutes, about a minute to wake, small memory for Spring Boot, and
   its free database expires. Rejected.
 - **Small paid VPS** (for example Hetzner, about €4.5 to €5.5 per month): always on and simple, but
@@ -67,3 +67,6 @@ India reach Singapore in about 60 ms.
   on both.
 - New dependencies (PostgreSQL JDBC driver, Flyway, Testcontainers) get entries in ADR-0001 when added.
 - Free plans change: re-check Cloud Run and Neon limits right before deploying.
+- PostgreSQL version (2026-11-23): tests use PostgreSQL 18 (`postgres:18.7-alpine3.24`). At V2-06,
+  the Neon project is created on the same major version; if Neon cannot offer it, the test image moves
+  to Neon's major version, and the version used is recorded here.

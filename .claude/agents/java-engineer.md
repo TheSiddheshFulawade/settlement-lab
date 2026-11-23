@@ -1,6 +1,7 @@
 ---
 name: java-engineer
 description: Implements Settlement Lab tasks in Java (engine module and the Spring Boot api module) to make already-failing tests pass, simply and readably. Use after test-engineer has written the failing tests for a SPEC.md task.
+tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
 effort: medium
 ---

@@ -25,6 +25,20 @@ test("no dated handoffs gives undefined", () => {
   assert.equal(latestHandoff(["notes.md"]), undefined);
 });
 
+test("next open skips paused tasks and names the first open unpaused one", () => {
+  const spec =
+    "- [x] V3-01 schema\n- [ ] V2-04 (paused until V3-07) SSE stream\n- [ ] V2-05 (Paused) README\n- [ ] V3-02 shared suites\n";
+  assert.deepEqual(taskSummary(spec), {
+    done: 1,
+    open: 3,
+    next: "V3-02 shared suites",
+  });
+});
+
+test("when every open task is paused there is no next task", () => {
+  assert.equal(taskSummary("- [ ] V2-06 (paused until V3-07) deploy\n").next, undefined);
+});
+
 test("task summary counts done and open tasks and names the next one", () => {
   const spec =
     "- [x] L-01 skeleton\n- [X] L-02 ledger\n- [ ] V2-04 SSE stream\n- [ ] V2-05 README\n";

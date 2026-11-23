@@ -30,9 +30,15 @@ L-09 README and a committed results run. Tick each task in SPEC.md when done.
 
 ## Branches and PRs
 
-- `main` holds the initial commit. **Never push to `main` after that**; all work arrives by PR.
-- One branch and one PR per day: `feature/day-N` from `main`, squash-merged after the user's yes.
-- Merges, pushes, creating repos or cloud resources, and money need the user's explicit yes.
+- **Never push to `main`**; all work arrives by PR. `main` is protected and requires the four
+  `verify (os, jdk)` checks (Ubuntu and Windows × JDK 21 and 25).
+- One branch and one PR per task, from `main`: `feature/v3-NN-<slug>`, `feature/v2-NN-<slug>`,
+  `fix/<topic>`, `chore/<topic>` or `docs/<topic>`. Tasks run back to back; a session may ship several.
+- **`git-ops` owns all pushes, PRs and merges** (`/ship` delegates to it): squash-merge on the
+  required green checks, no user yes needed. Red CI is reported, never bypassed.
+- **Hard gates** (stop, write it under "Waiting on user" in the handoff, move to the next unblocked
+  task, never work around it): money or cloud resources (Google Cloud, Neon) · DNS and secrets ·
+  GitHub repo settings · deploying · anything from an employer · a product choice no approved spec covers.
 
 ## Defend every line (the user must be able to explain all of it in an interview)
 
@@ -62,12 +68,14 @@ architecture rules. Run the results with the runner described in SPEC.md §4.6.
   - `deploy-engineer`: container and Cloud Run/Neon setup; never deploys or spends without a yes.
   - `security-auditor`: before any deploy and after changes to `api`, pom files or CI.
   - `tutor`: `docs/learn` notes, plain explanations, interview answers, TODO-ME reviews.
-- Typical task: `test-engineer` → `java-engineer` (or `database-engineer`) → `mvnw verify` →
-  `tutor` writes the learn note → `/ship`.
+  - `git-ops`: branch, commit, push, PR, wait for the required checks, squash-merge on green.
+- Typical task: `test-engineer` → `java-engineer` (or `database-engineer`) → `mvnw verify` (plus
+  `-Pdb` for database work) → `security-auditor` for `api`, pom or CI changes → `tutor` writes the
+  learn note and README Decisions entry → `/ship` (git-ops) → handoff line → next task.
 - Database and hosting are decided in `docs/adr/0002-database-and-hosting.md`: PostgreSQL (Neon) and
   Cloud Run, both in Singapore, free tiers only.
 
 ## Handoffs
 
-End each session with `docs/sessions/YYYY-MM-DD-NN-topic.md` (at most 20 lines): done, state, next,
-open questions, and the day's quiz.
+Keep the day's `docs/sessions/YYYY-MM-DD-NN-topic.md` (at most 20 lines) up to date after each merged
+task: done (PRs and SHAs), state, next, waiting on user, open TODO-ME stubs, and each task's quiz.
