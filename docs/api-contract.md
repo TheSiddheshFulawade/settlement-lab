@@ -1,7 +1,7 @@
 # Runs API contract (v2.1)
 
 For the portfolio `/lab` page. Source of truth for behaviour: SPEC.md §18 (REQ-RUN-001 to 012).
-**Status: draft, waiting for approval.** Base URL in production: `https://api.siddheshfulawade.com`.
+**Status: approved 2026-11-23.** Base URL in production: `https://api.siddheshfulawade.com`.
 
 All bodies are JSON (`application/json`), money is in **minor units** (`long`), times are
 milliseconds or microseconds as the field name says. Errors are RFC 9457 problem details

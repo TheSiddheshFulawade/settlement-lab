@@ -396,7 +396,7 @@ equivalents, then `/ship` (`git-ops` merges on the required green CI checks).
 
 Written 2026-11-23 for the portfolio `/lab` page (`docs/explainer/ui-mockup.svg`,
 `docs/explainer/ui-sequence.svg`); the wire format is in `docs/api-contract.md`. Same rules as
-section 0. Deadline: live demo by 1 Dec 2026. **Status: draft, waiting for approval.**
+section 0. Deadline: live demo by 1 Dec 2026. **Status: approved 2026-11-23.**
 
 ## 18. Runs API
 
@@ -426,7 +426,8 @@ runs (v3 stays a local and CI experiment), custom workloads beyond the fields be
 - REQ-RUN-005 THE API SHALL stop a run after 20 s of wall time; a stopped run drains, checks its
   invariants and reports `"stoppedEarly": true` with the transfers it completed.
 - REQ-RUN-006 IF one client IP has started 5 runs in the last hour, THEN THE API SHALL answer 429 with
-  `Retry-After` (seconds until the oldest of those runs leaves the window).
+  `Retry-After` (seconds until the oldest of those runs leaves the window). Client IPs SHALL be held in
+  memory only for the rate-limit window, and SHALL never be logged or stored.
 - REQ-RUN-007 IF 2 runs are already active, THEN THE API SHALL answer 503 with `Retry-After: 5`; IF
   the global cap of 60 runs per hour is reached, THEN 503 with `Retry-After` until the next slot.
 - REQ-RUN-008 THE API SHALL allow cross-origin requests only from `https://siddheshfulawade.com` and
@@ -471,4 +472,4 @@ Order: V2-04 (section 13; its bounded per-subscriber buffer is the building bloc
 reuse `feature/day-7` by merging `origin/main` into it) → V2-07 below → V2-05 (README v2 and an HTTP
 load check that includes a run) → V2-06 (deploy, only with the user's yes).
 
-- [ ] V2-07 (paused until V3-07) Runs API: request validation, run registry, 20 s deadline, metrics sampler, `report`, limits (429/503 + `Retry-After`), CORS, report retention; `docs/api-contract.md` kept in sync (REQ-RUN-001 to 012)
+- [ ] V2-07 Runs API: request validation, run registry, 20 s deadline, metrics sampler, `report`, limits (429/503 + `Retry-After`), CORS, report retention; `docs/api-contract.md` kept in sync (REQ-RUN-001 to 012)
