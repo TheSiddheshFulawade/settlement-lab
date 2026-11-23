@@ -357,3 +357,22 @@ framework-free.
   transfer must also check, move and record two accounts, a posting and an outcome as one step.
   `@Version` is optimistic locking (V3-05) and hides the SQL. `SET LOCAL` keeps the limits off pooled
   connections; the `CHECK (balance >= 0)` stays as the last line of defence.
+
+### Idempotency by database key (V3-04)
+
+- **Chosen:** insert-first claim on the `transfer` primary key: `INSERT ... ON CONFLICT (id) DO
+  NOTHING`, then lock, check, move money and record the outcome in the same transaction. Every
+  outcome that reaches the database is stored on the id's row, rejections included (`REJECTED_FUNDS`,
+  `REJECTED_INVALID`), and replayed for the same id. A new attempt needs a new id; only attempts that
+  store nothing (`QUEUE_FULL`, `REJECTED_CONTENTION`, a rolled-back error) leave the id free.
+  **Alternatives:** `SELECT` then `INSERT`; `SERIALIZABLE`; a Redis or in-memory key store; advisory
+  locks on the id; storing a hash of the request. **Why:** a second insert of the same key waits for
+  the first transaction, so concurrent duplicates serialise on the key with no code of ours, and the
+  claim, the money and the outcome commit or roll back together. `SELECT` then `INSERT` leaves a gap
+  where two callers both see "not found". `SERIALIZABLE` would add `40001` retries for no extra safety.
+  An in-memory store is forgotten on restart and not shared by a second server, and an external store
+  can disagree with the database after a crash. Advisory locks lock a name we invent, not a row the
+  database can check. A request hash would catch a reused id with different data, but it adds a column,
+  an error path and a choice of fields; the id alone is the key, and a caller such as the API can
+  compare payloads itself. Known limit: a duplicate waiting behind a stuck original gives up at
+  `lock_timeout` and may be retried safely.
