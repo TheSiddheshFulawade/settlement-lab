@@ -328,3 +328,17 @@ framework-free.
   the real database, and Windows runners cannot run Linux containers. Windows still runs the
   architecture and image-sync tests, and the module's coverage gate is skipped there instead of
   passing on no data.
+
+### Shared ledger suites (V3-02)
+
+- **Chosen:** the ledger property and stress suites became abstract contract classes
+  (`LedgerPropertiesContract`, `LedgerStressContract`). Each ledger has a small subclass that only
+  builds its ledger, and the engine publishes its test classes as a Maven test-jar that
+  `ledger-postgres` uses in test scope. **Alternative:** copy the suites into the new module; a shared
+  `testFixtures` module (`java-test-fixtures` is Gradle-only, so in Maven it would be an extra
+  module); a `ServiceLoader` or registry of ledgers; the old `LedgerKind` enum. **Why:** every ledger
+  must pass the same proofs, and copies drift apart. An enum is a closed list in one module, and the
+  engine cannot name `PostgresLedger` (the dependency points the other way). An abstract class is
+  open to any module, needs no new module and no runtime machinery, and costs one Maven plugin goal.
+  The price: test dependencies are not transitive, so `ledger-postgres` declares jqwik and
+  Awaitility again.
