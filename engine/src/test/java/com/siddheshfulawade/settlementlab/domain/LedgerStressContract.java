@@ -37,6 +37,15 @@ public abstract class LedgerStressContract {
         return Duration.ofSeconds(30);
     }
 
+    /**
+     * Transfers each worker thread submits per test. A ledger behind a database overrides this with a
+     * smaller number, because every transfer is several network round trips; the in-memory ledgers
+     * keep the full load.
+     */
+    protected int transfersPerThread() {
+        return TRANSFERS_PER_THREAD;
+    }
+
     @Test
     @DisplayName("REQ-LAB-002 REQ-LAB-005 random transfers on 10 hot accounts keep every invariant")
     public void randomTransfersKeepInvariants() throws InterruptedException {
@@ -46,7 +55,7 @@ public abstract class LedgerStressContract {
 
         Concurrently.run(THREADS, timeout(), thread -> {
             var random = new SplittableRandom(SEED + thread);
-            for (int i = 0; i < TRANSFERS_PER_THREAD; i++) {
+            for (int i = 0; i < transfersPerThread(); i++) {
                 Transfer t = transfer(
                         "t-" + thread + "-" + i,
                         AccountId.of(random.nextLong(1, 11)),
@@ -59,7 +68,10 @@ public abstract class LedgerStressContract {
         });
 
         assertAllInvariants(opening, ledger, accepted);
-        assertThat(accepted).as("the workload posts a real share of transfers").hasSizeGreaterThan(10_000);
+        // One in sixteen: 10,000 of the full in-memory load of 160,000, scaled with transfersPerThread.
+        assertThat(accepted)
+                .as("the workload posts a real share of transfers")
+                .hasSizeGreaterThan(THREADS * transfersPerThread() / 16);
     }
 
     @Test
@@ -71,7 +83,7 @@ public abstract class LedgerStressContract {
 
         Concurrently.run(THREADS, timeout(), thread -> {
             boolean forward = thread % 2 == 0;
-            for (int i = 0; i < TRANSFERS_PER_THREAD; i++) {
+            for (int i = 0; i < transfersPerThread(); i++) {
                 Transfer t = forward
                         ? transfer("ab-" + thread + "-" + i, A, B, 1)
                         : transfer("ba-" + thread + "-" + i, B, A, 1);
@@ -94,7 +106,7 @@ public abstract class LedgerStressContract {
         Concurrently.run(THREADS, timeout(), thread -> {
             AccountId source = AccountId.of(thread + 1);
             AccountId target = AccountId.of((thread + 1) % THREADS + 1);
-            for (int i = 0; i < TRANSFERS_PER_THREAD; i++) {
+            for (int i = 0; i < transfersPerThread(); i++) {
                 Transfer t = transfer("ring-" + thread + "-" + i, source, target, 1);
                 if (ledger.apply(t) == Outcome.POSTED) {
                     accepted.add(t.id());
@@ -129,7 +141,7 @@ public abstract class LedgerStressContract {
             }
             try {
                 var random = new SplittableRandom(SEED + thread);
-                for (int i = 0; i < TRANSFERS_PER_THREAD; i++) {
+                for (int i = 0; i < transfersPerThread(); i++) {
                     ledger.apply(transfer(
                             "s-" + thread + "-" + i,
                             AccountId.of(random.nextLong(1, 11)),
@@ -170,7 +182,7 @@ public abstract class LedgerStressContract {
             }
             try {
                 var random = new SplittableRandom(SEED + thread);
-                for (int i = 0; i < TRANSFERS_PER_THREAD; i++) {
+                for (int i = 0; i < transfersPerThread(); i++) {
                     ledger.apply(transfer(
                             "b-" + thread + "-" + i,
                             AccountId.of(random.nextLong(1, 5)),
