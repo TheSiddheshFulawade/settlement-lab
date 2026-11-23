@@ -20,6 +20,9 @@ Base: every PR → `main`, squash merge. Branch names: `feature/v3-NN-<slug>`, `
    README Decisions entry, risks, and the line `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
    at the end. If a PR exists for the branch, update it.
 5. CI: `gh pr checks <n> --watch --required` (up to 40 minutes; four jobs on Ubuntu and Windows × JDK 21 and 25).
+   Right after a push the checks can still show the previous run: confirm with
+   `gh run list --branch <branch> --limit 1 --json headSha,databaseId` that the run's `headSha` is the SHA you
+   pushed, and read logs only from that run.
 6. Green: re-read `gh pr view <n> --json baseRefName,headRefOid,mergeable`; base `main` and head must match what
    you pushed. Then `gh pr merge <n> --squash --delete-branch`.
 7. Red: get `gh run view <id> --log-failed` (last 150 lines), report the cause to the master, and don't edit code.
