@@ -63,6 +63,14 @@
     <pluginManagement>
       <plugins>
         <plugin>
+          <!-- Runs DbResultsMain (test classpath) from ledger-postgres:
+               mvnw -Pdb -pl ledger-postgres -am test-compile exec:java -Dexec.classpathScope=test
+               -Dexec.mainClass=com.siddheshfulawade.settlementlab.postgres.DbResultsMain -->
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>exec-maven-plugin</artifactId>
+          <version>${exec.plugin.version}</version>
+        </plugin>
+        <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
           <version>${compiler.plugin.version}</version>
