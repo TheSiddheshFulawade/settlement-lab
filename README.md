@@ -342,3 +342,18 @@ framework-free.
   open to any module, needs no new module and no runtime machinery, and costs one Maven plugin goal.
   The price: test dependencies are not transitive, so `ledger-postgres` declares jqwik and
   Awaitility again.
+
+### PostgreSQL pessimistic ledger (V3-03)
+
+- **Chosen:** row locks, `SELECT ... WHERE id IN (?, ?) ORDER BY id FOR UPDATE`, in ascending id
+  order, at `READ COMMITTED`, in plain JDBC, with `SET LOCAL lock_timeout` and `statement_timeout`
+  per transaction. A timeout rolls back and throws `LedgerDatabaseException`; it is not an `Outcome`,
+  so the same id can be retried. **Alternatives:** `SERIALIZABLE` with retry on `40001`; advisory
+  locks; one `UPDATE ... WHERE balance >= amount` guard instead of reading first; JPA `@Version`.
+  **Why:** ordered row locks make deadlock impossible (waits only climb) and a locked read always
+  returns the latest committed balance, so `READ COMMITTED` is enough and nothing needs a retry loop.
+  `SERIALIZABLE` adds retries for no extra safety here. Advisory locks lock names we invent, not the
+  rows, so the database cannot check them. A guarded single `UPDATE` covers one account, but a
+  transfer must also check, move and record two accounts, a posting and an outcome as one step.
+  `@Version` is optimistic locking (V3-05) and hides the SQL. `SET LOCAL` keeps the limits off pooled
+  connections; the `CHECK (balance >= 0)` stays as the last line of defence.
