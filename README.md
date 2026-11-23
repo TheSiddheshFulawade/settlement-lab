@@ -319,6 +319,22 @@ framework-free.
   general ledger) plus the settings. **Alternative:** Spring Boot Actuator and Micrometer.
   **Why:** no extra dependency for a handful of numbers; Actuator can come with deployment (V2-06).
 
+### Event stream (V2-04)
+
+- **Chosen:** server-sent events (`text/event-stream`) through Spring's `SseEmitter`, fed by an
+  `EventHub` that is the engine's listener. **Alternative:** WebSockets; polling. **Why:** the flow
+  is one-way (server to client), SSE runs over plain HTTP, browsers reconnect by themselves, and
+  there is no extra protocol or dependency.
+- **Chosen:** a bounded buffer per subscriber, filled with a non-blocking `offer`, and one virtual
+  thread per subscriber writing to the connection; a full buffer drops that subscriber.
+  **Alternative:** write to clients from the engine's worker. **Why:** a slow or vanished client
+  must never cost a worker any time (REQ-API-005); the worst it can cost is its own buffer.
+- **Chosen:** each subscriber's close runs on its own virtual thread, once (a `compareAndSet` on an
+  `open` flag decides the winner), with a failing close caught. **Alternative:** close inline on the
+  calling thread, or on the subscriber's sender thread. **Why:** closing an emitter can block or throw,
+  and the sender may be stuck in a socket write that ignores interrupts; inline close would hand that
+  stall to an engine worker. A separate thread costs one cheap virtual thread and keeps `onOutcome` fast.
+
 ### PostgreSQL module and schema (V3-01)
 
 - **Chosen:** a separate `ledger-postgres` module that depends on `engine`, using plain JDBC.
