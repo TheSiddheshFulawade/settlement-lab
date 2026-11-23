@@ -384,7 +384,7 @@ The GL is keyed by transfer id, so a resend after a lost acknowledgement is harm
 - [x] V3-03 `PostgresLedger` pessimistic on the shared suites, opposing-transfer deadlock test, timeouts (REQ-DB-001, 003, 009, 010)
 - [x] V3-04 Idempotency by `transfer` key: concurrent duplicates, two instances, after restart, a duplicate `REJECTED_FUNDS` returns the stored rejection; README Decisions entry on the idempotency-key rule (REQ-DB-005)
 - [x] V3-05 Optimistic mode on the same suites, retry with jitter capped at 10, `REJECTED_CONTENTION` in `Outcome` with the engine releasing the claim, the api's 503 + `Retry-After` mapping and its test, conflict count in metrics (REQ-DB-004, 004a, REQ-API-008)
-- [ ] V3-06 Transactional outbox and `OutboxRelay` with `SKIP LOCKED`, two relays, restart and fault drains (REQ-DB-006 to 008)
+- [x] V3-06 Transactional outbox and `OutboxRelay` with `SKIP LOCKED`, two relays, restart and fault drains (REQ-DB-006 to 008)
 - [ ] V3-07 Runner cells for both database modes behind a `--db` option (local only, not in CI; the database tests still run on Ubuntu CI), README Decisions and results, `docs/learn` notes with Oracle equivalents, one TODO-ME per task
 
 Each task follows the same flow: `test-engineer` writes the failing tests, `database-engineer` or
