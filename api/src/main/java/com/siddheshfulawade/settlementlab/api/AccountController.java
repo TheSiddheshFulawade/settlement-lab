@@ -1,6 +1,7 @@
 package com.siddheshfulawade.settlementlab.api;
 
 import com.siddheshfulawade.settlementlab.domain.AccountId;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** {@code GET /api/v1/accounts/{id}} (REQ-API-004): one balance, read without a full snapshot. */
+@Profile("!prod") // REQ-API-010: the public service serves only the runs API and health
 @RestController
 @RequestMapping("/api/v1/accounts")
 class AccountController {

@@ -249,7 +249,7 @@ Maven parent with two modules:
 - [x] V2-03 `GET /api/v1/accounts/{id}` via `Ledger.balance`, `GET /api/v1/metrics` (REQ-API-004)
 - [x] V2-04 `GET /api/v1/events` SSE stream with bounded per-subscriber buffers (REQ-API-005)
 - [ ] V2-05 README v2 section, how to run, an HTTP load check with invariants
-- [ ] V2-06 Deploy to `api.siddheshfulawade.com` (only with the user's explicit yes)
+- [ ] V2-06 Deploy to `api.siddheshfulawade.com` (only with the user's explicit yes). To verify there: real one-CPU Cloud Run run time (FLAKY and OUTAGE at 20,000, two runs at once; 14.1 s at most on Linux CI runners, and the report must stay within 60 s), CPU between requests, and the Cloudflare ranges
 
 # Settlement Lab · v3 spec (PostgreSQL ledger)
 
@@ -396,7 +396,7 @@ equivalents, then `/ship` (`git-ops` merges on the required green CI checks).
 
 Written 2026-11-23 for the portfolio `/lab` page (`docs/explainer/ui-mockup.svg`,
 `docs/explainer/ui-sequence.svg`); the wire format is in `docs/api-contract.md`. Same rules as
-section 0. Deadline: live demo by 1 Dec 2026. **Status: approved 2026-11-23.**
+section 0. Deadline: live demo by 1 Dec 2026. **Status: approved 2026-11-23, amended 2026-11-24 (owner-approved).**
 
 ## 18. Runs API
 
@@ -419,30 +419,51 @@ runs (v3 stays a local and CI experiment), custom workloads beyond the fields be
   `duplicatePercent` (0 to 10); IF a field is missing, unknown or out of range, or an unknown field is
   sent, THEN THE API SHALL answer 400 with an RFC 9457 problem detail and start nothing.
 - REQ-RUN-003 WHEN a client opens `GET /api/v1/runs/{id}/events`, THE API SHALL stream
-  `metrics` events every 250 ms while the run is active, then exactly one `report` event with the
-  invariant results, then close the stream. IF the run is unknown or expired, THEN 404.
+  `metrics` events every 250 ms while the run is active (drain included), then exactly one `report`
+  event with the invariant results, then close the stream. Events carry no `id` and there is no
+  `Last-Event-ID` replay. IF the run is unknown or expired, THEN 404.
 - REQ-RUN-004 WHEN a client connects to the events of a run that has already finished, THE API SHALL
   send the final `report` at once and close.
 - REQ-RUN-005 THE API SHALL stop a run after 20 s of wall time; a stopped run drains, checks its
-  invariants and reports `"stoppedEarly": true` with the transfers it completed.
+  invariants and reports `"stoppedEarly": true` with the transfers it completed. The report SHALL be
+  ready within 60 s of the 202 (OUTAGE included). All deadlines use wall time. IF a run passes 60 s
+  without a report (for example, the instance lost its CPU), THEN the next runs request SHALL expire
+  it: close its engine and streams, release its slot and answer 404 for it. A run's status is
+  `RUNNING` or `DONE` only; after a restart every earlier id answers 404.
 - REQ-RUN-006 IF one client IP has started 5 runs in the last hour, THEN THE API SHALL answer 429 with
-  `Retry-After` (seconds until the oldest of those runs leaves the window). Client IPs SHALL be held in
-  memory only for the rate-limit window, and SHALL never be logged or stored.
+  `Retry-After` (seconds until the oldest of those runs leaves the window). The client IP is the first
+  address, walking `X-Forwarded-For` from the right, outside `settlement.runs.trusted-proxy-ranges`
+  (default empty, so the last entry); an entry that is not an IP address, or no entry left, means the
+  remote address. IPv6 is keyed by its /64. Client IPs SHALL be held in memory only for the rate-limit
+  window, and SHALL never be logged or stored.
 - REQ-RUN-007 IF 2 runs are already active, THEN THE API SHALL answer 503 with `Retry-After: 5`; IF
-  the global cap of 60 runs per hour is reached, THEN 503 with `Retry-After` until the next slot.
+  the global cap of 60 runs per hour is reached, THEN 503 with `Retry-After` until the next slot. Every
+  429 and 503 problem body SHALL carry `retryAfterSeconds`, equal to `Retry-After`.
 - REQ-RUN-008 THE API SHALL allow cross-origin requests only from `https://siddheshfulawade.com` and
   the Cloudflare Pages preview origin configured in `settlement.runs.preview-origin`; no other origin
-  gets CORS headers.
+  gets CORS headers. This covers the runs endpoints, the event stream, `/actuator/health` and every
+  error body.
 - REQ-RUN-009 EACH run SHALL use a new in-memory engine (ledger, worker pool, fake general ledger,
-  resilient publisher, outbox) with a fixed workload of 1,000 accounts and a fixed seed per run, and
-  SHALL close it when the report is sent; no state is shared between runs.
+  resilient publisher, outbox) with a fixed workload of 1,000 accounts and a fixed seed per run, SHALL
+  submit at a steady 2,000 transfers/s (`settlement.runs.transfers-per-second`), and SHALL close it when the report is sent; no state is shared between runs.
 - REQ-RUN-010 THE `report` SHALL list each invariant (`TOTAL_CONSERVED`, `NO_NEGATIVE_BALANCE`,
   `POSTED_AT_MOST_ONCE`, `POSTINGS_EXPLAIN_BALANCES`, `POSTINGS_MATCH_ACCEPTED`,
   `GL_MATCHES_POSTINGS`) as passed or failed with its first counterexample (REQ-LAB-014), plus the
-  opening and closing totals and the duplicates sent and applied.
+  opening and closing totals (minor units) and the duplicates sent and applied. A counterexample is a
+  string of at most 500 characters, or null. `durationMs` is the time from the 202 to the end of the
+  drain. `throughputPerSecond` is the paced rate, not engine capacity.
 - REQ-RUN-011 A slow or disconnected events client SHALL NOT slow or stop the run (as REQ-API-005);
-  at most 2 event subscribers per run, a third gets 429.
-- REQ-RUN-012 THE API SHALL keep a finished run's report for 10 minutes, then forget it.
+  at most 2 event subscribers per run, a third gets 429. A dropped subscriber's place SHALL be free on
+  the next failed write, within 1 s.
+- REQ-RUN-012 THE API SHALL keep a finished run's report for 10 minutes, then forget it. A `runId`
+  matches `[A-Za-z0-9-]{1,64}`.
+- REQ-RUN-013 THE API SHALL expose only `health` of the Spring Boot actuator, without details and
+  independent of any database.
+- REQ-API-009 IF a transfer id does not match `[A-Za-z0-9._-]{1,64}`, or a body has an unknown field,
+  THEN THE API SHALL answer 400; IF a request body is over 16 KB, THEN 413; each as a problem detail,
+  submitting nothing.
+- REQ-API-010 WHILE the `prod` profile is active, THE API SHALL serve only `/api/v1/runs/**` and
+  `/actuator/health`; every other endpoint SHALL answer 404.
 
 ### 18.3 Design
 
@@ -451,16 +472,21 @@ runs (v3 stays a local and CI experiment), custom workloads beyond the fields be
   engine and its workload driver.
 - Each run builds its engine through the same factory `EngineConfiguration` uses, with the request's
   ledger, threads and faults; 8 workers, queue capacity 1,024. The driver submits the workload's
-  transfers (duplicates re-send an earlier id, as in the runner's `Workload`), then drains.
+  transfers at the paced rate (duplicates re-send an earlier id, as in the runner's `Workload`), then
+  drains. 20,000 transfers take 10 s at 2,000/s, inside the 20 s deadline; capacity numbers stay in the
+  README benchmarks. The drain is bounded so that 20 s + drain stays under 60 s.
+- OUTAGE in a run refuses everything from 1 s to 4 s after the start, so runs under 2,000 transfers
+  end their submissions before it begins (the app's 30 s default start would never be reached).
 - A sampler on a scheduled executor reads `EngineMetrics`, the publisher's retry and breaker counters
-  and the outbox size every 250 ms and pushes one `metrics` event per subscriber through a bounded
-  buffer (the V2-04 per-subscriber buffer, reused); a full buffer drops the oldest `metrics` event,
+  and the postings waiting for the general ledger (waiting for a sender, being sent, or in the outbox)
+  every 250 ms and pushes one `metrics` event per subscriber through a bounded buffer (the V2-04 per-subscriber buffer, reused); a full buffer drops the oldest `metrics` event,
   never the `report`.
 - Limits: a per-IP sliding window (5 per hour) and a global window (60 per hour), plus a semaphore of
   2 active runs, all in memory. One instance only (Cloud Run max instances 1, ADR-0002), so in-memory
-  limits are exact. The client IP is the address Cloud Run's front end reports, i.e. the **last**
-  `X-Forwarded-For` entry, never a client-supplied first entry. The global cap bounds cost even if the
-  per-IP key were spoofed.
+  limits are exact. The client IP is never a client-supplied first `X-Forwarded-For` entry
+  (REQ-RUN-006). The trusted proxy ranges (Cloudflare's) are set and verified at V2-06, with how the
+  instance's CPU behaves between requests. The global cap bounds cost even if the per-IP key were
+  spoofed. `GET` and health stay outside Cloudflare's rate rule.
 - Cost bound: 2 runs × 20 s × 8 workers on one 512 MiB instance; the existing transfer, account,
   metrics and events endpoints stay for local use.
 - Engine module unchanged except, if needed, a read-only accessor for retry and breaker counts
@@ -472,4 +498,4 @@ Order: V2-04 (section 13; its bounded per-subscriber buffer is the building bloc
 reuse `feature/day-7` by merging `origin/main` into it) → V2-07 below → V2-05 (README v2 and an HTTP
 load check that includes a run) → V2-06 (deploy, only with the user's yes).
 
-- [ ] V2-07 Runs API: request validation, run registry, 20 s deadline, metrics sampler, `report`, limits (429/503 + `Retry-After`), CORS, report retention; `docs/api-contract.md` kept in sync (REQ-RUN-001 to 012)
+- [x] V2-07 Runs API: request validation, run registry, 20 s deadline, metrics sampler, `report`, limits (429/503 + `Retry-After`), CORS, report retention; `docs/api-contract.md` kept in sync (REQ-RUN-001 to 012)

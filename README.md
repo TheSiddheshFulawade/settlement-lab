@@ -112,11 +112,12 @@ What the numbers say (and what they do not):
   had the lower p99 in all six pairs** (for example 800 vs 2,008 µs), with a somewhat higher p50.
   One run on 4 cores: the direction is worth a repeat run, the exact ratios are not to be trusted.
 - **Faults cost some throughput, not a collapse**: for locking, FLAKY cost up to about 13 % and
-  OUTAGE up to about 30 %; CAS moved within noise. Before publishing moved off the worker threads,
-  FLAKY ran at about 730 transfers/s. FLAKY needed about 16,700 retries, but only 3 postings ever
-  reached the outbox. OUTAGE opened the
-  breaker once per cell; the outbox held up to about 95,000 postings (the 1 s outage outlasts the
-  run) and drained them all afterwards.
+  OUTAGE up to about 30 %; CAS moved within noise. Publishing runs off the worker threads, so these
+  rates are not general-ledger delivery rates (the runs API, paced at 2,000 transfers/s, needs about
+  14 s on Linux CI runners to submit and deliver 20,000 under FLAKY:
+  `docs/learn/v2-07-runs-api.md`). FLAKY needed about 16,700 retries, but only 3 postings ever
+  reached the outbox. OUTAGE opened the breaker once per cell; the outbox held up to about 95,000
+  postings (the 1 s outage outlasts the run) and drained them all afterwards.
 - **Every invariant passed in every cell**: total conserved, no negative balance, each transfer
   posted at most once, postings explain the balances, postings match accepted transfers, and the
   GL holds exactly the ledger's postings.
@@ -334,6 +335,35 @@ framework-free.
   calling thread, or on the subscriber's sender thread. **Why:** closing an emitter can block or throw,
   and the sender may be stuck in a socket write that ignores interrupts; inline close would hand that
   stall to an engine worker. A separate thread costs one cheap virtual thread and keeps `onOutcome` fast.
+
+### Runs API (V2-07)
+
+- **Chosen:** the run limits (5 per visitor per hour, 60 per hour overall, 2 active) are plain in-memory
+  structures behind one lock, with check and record in one step. **Alternative:** a database or Redis
+  counter. **Why:** the service runs as one instance (ADR-0002), so memory is exact, costs no call per
+  visitor and adds no moving part. Several instances would each count alone, and the limiter would have to
+  move out then. The global cap bounds cost even if a visitor key were forged.
+- **Chosen:** the driver submits at a paced 2,000 transfers/s (catch-up after a stall capped at 100) and
+  reports that paced rate. **Alternative:** submit as fast as the engine goes. **Why:** a public demo must
+  cost a bounded, predictable amount of CPU, and a visitor can follow a steady stream; engine capacity is
+  measured separately, in the benchmarks above. The price: a 20,000 run takes about 14 s on Linux CI runners.
+- **Chosen:** a new in-memory engine per run, closed when the report is sent, and a finished run keeps
+  only its report. **Alternative:** one shared engine for all visitors, or keeping the engine for the
+  retention period. **Why:** runs cannot disturb each other's balances or invariant checks, and a visitor
+  never costs a database call. Keeping engines was measured at about 7 MB per run, 419 MB at 60 runs,
+  too much for a 512 MiB instance.
+- **Chosen:** the client IP is found by walking `X-Forwarded-For` from the right, past the trusted proxy
+  ranges (empty until V2-06), falling back to the connection's address, IPv6 reduced to its /64.
+  **Alternative:** the first entry. **Why:** the first entry is typed by the visitor, so it would let
+  anyone dodge the per-visitor limit. The address is held in memory for the window only and never logged.
+- **Chosen:** CORS, the production allow-list and the 16 KB body cap are servlet filters in a fixed order
+  (CORS first), the cap chosen by method, not by path, with Spring's form-content filter off.
+  **Alternative:** Spring MVC's CORS support and per-controller checks. **Why:** filters cover every
+  answer the same way, including health and error bodies, and a path-based cap can be walked around
+  (a form `PUT` body was read whole before any handler ran).
+- **Chosen:** a run's status is only `RUNNING` or `DONE`; a run without a report after 60 s is expired and
+  answers 404. **Alternative:** more statuses (`FAILED`, `EXPIRED`). **Why:** the page needs one question
+  answered, "is there a report yet", and a lost run is, to a visitor, the same as an unknown one.
 
 ### PostgreSQL module and schema (V3-01)
 

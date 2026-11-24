@@ -143,6 +143,19 @@ public final class OutboxPublisher implements PostingPublisher, AutoCloseable {
         }
     }
 
+    /**
+     * Postings accepted by {@code publish()} that the general ledger has not yet accepted: waiting for a
+     * sender, being sent, in the outbox, or in the relay's hand. Read-only.
+     */
+    public long pendingCount() {
+        lock.lock();
+        try {
+            return pending;
+        } finally {
+            lock.unlock();
+        }
+    }
+
     /** Waits until the outbox is empty. False if {@code timeout} passed first. */
     public boolean drain(Duration timeout) {
         long remaining = timeout.toNanos();

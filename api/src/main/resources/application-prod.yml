@@ -1,0 +1,2 @@
+# The public service (REQ-API-010): only /api/v1/runs/** and /actuator/health are served.
+# The controllers and the long-lived engine of the local endpoints are @Profile("!prod").

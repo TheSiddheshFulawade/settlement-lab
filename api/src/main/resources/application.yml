@@ -5,13 +5,41 @@ spring:
   mvc:
     problemdetails:
       enabled: true # RFC 9457 bodies for malformed or invalid requests (REQ-API-003)
+    formcontent:
+      filter:
+        enabled: false # that filter reads a PUT/PATCH/DELETE form body into memory; nothing here takes forms (REQ-API-009)
+  web:
+    resources:
+      add-mappings: false # no static files: an unknown path (any method) is a 404, never a 405 from the file handler
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true # an unknown field is a 400 (REQ-API-009)
+    mapper:
+      allow-coercion-of-scalars: false # "5" is not a number and 5 is not a string (REQ-API-009)
   lifecycle:
     timeout-per-shutdown-phase: 20s
   threads:
     virtual:
       enabled: true
+# Only health is public, with no details (REQ-RUN-013). Anything else is not exposed, so it answers 404.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+      discovery:
+        enabled: false
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+      probes:
+        enabled: false
 # Engine settings (all optional; defaults in SettlementProperties).
 settlement:
   ledger: LOCKING
   threads: VIRTUAL
   faults: NONE
+# Runs API (all optional; defaults in RunsProperties, which are the contract's numbers).
+#   settlement.runs.preview-origin: https://develop.portfolio-7qt.pages.dev
+#   settlement.runs.trusted-proxy-ranges: set and verified at deploy time (V2-06)
