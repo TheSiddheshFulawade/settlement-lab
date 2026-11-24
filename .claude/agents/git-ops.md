@@ -11,6 +11,10 @@ which `mvnw.cmd verify` passed.
 Base: every PR → `main`, squash merge. Branch names: `feature/v3-NN-<slug>`, `feature/v2-NN-<slug>`, `fix/<topic>`,
 `chore/<topic>`, `docs/<topic>`.
 
+If a guard, hook or permission check blocks a command, stop and report the exact command and message. Never split,
+reword or rework it. Before each commit, list the staged files and scan the content of all of them; report exactly
+what was scanned.
+
 1. Check: on a work branch, tree clean. If HEAD is not the SHA the master gave, run `mvnw.cmd verify` first.
 2. Leak check: `git diff --stat origin/main...HEAD` must not include `.env*`, keys, certificates or anything that
    names an employer system. If it does, stop and report.
