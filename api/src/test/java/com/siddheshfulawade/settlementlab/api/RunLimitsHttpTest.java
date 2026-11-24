@@ -179,14 +179,16 @@ class RunLimitsHttpTest {
     @DisplayName("REQ-RUN-007 while a run is active, another start is 503 busy with Retry-After 5")
     void busyIs503() throws Exception {
         String slow = RunHttp.nextIp();
-        MockHttpServletResponse accepted = mvc.post()
-                .uri("/api/v1/runs")
-                .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Forwarded-For", slow)
-                .content(RunHttp.SLOW_RUN)
-                .exchange()
-                .getResponse();
-        assertThat(accepted.getStatus()).isEqualTo(202);
+        // until: the previous test's quick run may still be closing its engine, and it holds the only slot
+        MockHttpServletResponse accepted = until(
+                () -> mvc.post()
+                        .uri("/api/v1/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Forwarded-For", slow)
+                        .content(RunHttp.SLOW_RUN)
+                        .exchange()
+                        .getResponse(),
+                202);
         String runId = JsonPath.read(accepted.getContentAsString(), "$.runId");
 
         MockHttpServletResponse refused = post(RunHttp.nextIp());
