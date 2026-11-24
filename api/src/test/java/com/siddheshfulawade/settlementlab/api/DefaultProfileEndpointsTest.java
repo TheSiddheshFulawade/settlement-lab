@@ -11,7 +11,10 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 
-/** REQ-API-010 the other way round: without the prod profile the local endpoints are all there. */
+/**
+ * REQ-API-010 the other way round: without the prod profile the local endpoints are all there. The Spring
+ * context (so the engine) is shared with TransferControllerTest: only accounts 14 and 15 move here.
+ */
 @SpringBootTest(properties = {"settlement.accounts=20", "settlement.opening-balance=1000"})
 @AutoConfigureMockMvc
 class DefaultProfileEndpointsTest {
@@ -41,7 +44,7 @@ class DefaultProfileEndpointsTest {
         assertThat(mvc.post()
                         .uri("/api/v1/transfers")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"id\":\"default-profile-1\",\"source\":1,\"target\":2,\"amount\":1}")
+                        .content("{\"id\":\"default-profile-1\",\"source\":14,\"target\":15,\"amount\":1}")
                         .exchange()
                         .getResponse()
                         .getStatus())

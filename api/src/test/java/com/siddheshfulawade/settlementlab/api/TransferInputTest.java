@@ -14,7 +14,10 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 
-/** REQ-API-009 on /transfers: a bad id or an unknown field is a 400 problem and submits nothing. */
+/**
+ * REQ-API-009 on /transfers: a bad id or an unknown field is a 400 problem and submits nothing. The Spring
+ * context (so the engine) is shared with TransferControllerTest: only accounts 12 and 13 are used here.
+ */
 @SpringBootTest(properties = {"settlement.accounts=20", "settlement.opening-balance=1000"})
 @AutoConfigureMockMvc
 class TransferInputTest {
@@ -35,12 +38,12 @@ class TransferInputTest {
     }
 
     private static String transfer(String escapedId) {
-        return "{\"id\":\"" + escapedId + "\",\"source\":1,\"target\":2,\"amount\":1}";
+        return "{\"id\":\"" + escapedId + "\",\"source\":12,\"target\":13,\"amount\":1}";
     }
 
     private void assertRejectedAndNothingSubmitted(String json) throws Exception {
         long submitted = runtime.engine().metrics().submitted();
-        long balance = runtime.engine().snapshot().get(AccountId.of(1)).minorUnits();
+        long balance = runtime.engine().snapshot().get(AccountId.of(12)).minorUnits();
 
         MockHttpServletResponse response = post(json);
 
@@ -50,7 +53,7 @@ class TransferInputTest {
         assertThat(runtime.engine().metrics().submitted())
                 .as("nothing was submitted")
                 .isEqualTo(submitted);
-        assertThat(runtime.engine().snapshot().get(AccountId.of(1)).minorUnits())
+        assertThat(runtime.engine().snapshot().get(AccountId.of(12)).minorUnits())
                 .isEqualTo(balance);
     }
 
@@ -109,17 +112,17 @@ class TransferInputTest {
     @Test
     @DisplayName("REQ-API-009 an id that is not a string is 400 and submits nothing")
     void nonStringIdIsRejected() throws Exception {
-        assertRejectedAndNothingSubmitted("{\"id\":5,\"source\":1,\"target\":2,\"amount\":1}");
-        assertRejectedAndNothingSubmitted("{\"id\":null,\"source\":1,\"target\":2,\"amount\":1}");
-        assertRejectedAndNothingSubmitted("{\"source\":1,\"target\":2,\"amount\":1}");
+        assertRejectedAndNothingSubmitted("{\"id\":5,\"source\":12,\"target\":13,\"amount\":1}");
+        assertRejectedAndNothingSubmitted("{\"id\":null,\"source\":12,\"target\":13,\"amount\":1}");
+        assertRejectedAndNothingSubmitted("{\"source\":12,\"target\":13,\"amount\":1}");
     }
 
     @Test
     @DisplayName("REQ-API-009 an unknown field is 400 and submits nothing")
     void unknownFieldIsRejected() throws Exception {
         assertRejectedAndNothingSubmitted(
-                "{\"id\":\"unknown-field-1\",\"source\":1,\"target\":2,\"amount\":1,\"extra\":true}");
+                "{\"id\":\"unknown-field-1\",\"source\":12,\"target\":13,\"amount\":1,\"extra\":true}");
         assertRejectedAndNothingSubmitted(
-                "{\"id\":\"unknown-field-2\",\"source\":1,\"target\":2,\"amount\":1,\"Amount\":9}");
+                "{\"id\":\"unknown-field-2\",\"source\":12,\"target\":13,\"amount\":1,\"Amount\":9}");
     }
 }
