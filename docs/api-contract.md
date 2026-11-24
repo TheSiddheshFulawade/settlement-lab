@@ -55,9 +55,9 @@ metrics, or the `report` if the run is done.
 
 ```
 event: metrics
-data: {"elapsedMs":3000,"submitted":6000,"posted":5870,"rejected":5,"duplicates":120,
-data:  "throughputPerSecond":1957,"p99Micros":735,"queueDepth":5,"queueCapacity":1024,
-data:  "glRetries":845,"breakerState":"CLOSED","outboxSize":1070}
+data: {"elapsedMs":3002,"submitted":6005,"posted":5907,"rejected":6,"duplicates":92,
+data:  "throughputPerSecond":1978,"p99Micros":50,"queueDepth":0,"queueCapacity":1024,
+data:  "glRetries":752,"breakerState":"CLOSED","outboxSize":1567}
 ```
 
 (Shown wrapped; the server sends one `data:` line.)
@@ -81,16 +81,16 @@ data:  "glRetries":845,"breakerState":"CLOSED","outboxSize":1070}
   "status": "DONE",
   "stoppedEarly": false,
   "settings": { "ledger": "LOCKING", "threads": "VIRTUAL", "faults": "FLAKY", "transfers": 20000, "duplicatePercent": 2 },
-  "durationMs": 12250,
+  "durationMs": 13704,
   "transfersCompleted": 20000,
   "openingTotal": 10000000,
   "closingTotal": 10000000,
-  "duplicatesSent": 400,
+  "duplicatesSent": 395,
   "duplicatesApplied": 0,
-  "throughputPerSecond": 1600,
-  "p50Micros": 210,
-  "p99Micros": 735,
-  "glRetries": 3459,
+  "throughputPerSecond": 1425,
+  "p50Micros": 23,
+  "p99Micros": 50,
+  "glRetries": 3443,
   "breakerOpens": 0,
   "invariants": [
     { "name": "TOTAL_CONSERVED", "passed": true, "counterexample": null },
@@ -104,11 +104,13 @@ data:  "glRetries":845,"breakerState":"CLOSED","outboxSize":1070}
 }
 ```
 
-Numbers are illustrative: 1,000 accounts × 10,000 = 10,000,000 in total, and 20,000 transfers with 400
-duplicates make 19,600 postings. `durationMs` runs from the 202 to the end of the drain (drain
-included), and `throughputPerSecond` = postings ÷ `durationMs`: 19,600 ÷ 12.25 s = 1,600. It is a paced
-rate, at most 2,000, not engine capacity. A `counterexample` is a string of at most 500 characters,
-or null.
+Both examples are one measured run on a GitHub Actions Linux runner (4 CPUs, JDK 25, 2026-11-24); real
+one-CPU Cloud Run speed is to verify at V2-06. 1,000 accounts × 10,000 = 10,000,000 in total, and 20,000
+transfers = 19,534 postings + 71 rejected + 395 duplicates. `durationMs` runs from the 202 to the end of
+the drain (drain included): submitting takes 10 s, then FLAKY needs about 4 s more to deliver what is
+still waiting (`outboxSize` was 5,069 at 10 s). `throughputPerSecond` = postings ÷ `durationMs`:
+19,534 ÷ 13.704 s = 1,425. It is a paced rate, at most 2,000, not engine capacity.
+A `counterexample` is a string of at most 500 characters, or null.
 
 `stoppedEarly: true` means the 20 s limit ended the run; the checks still cover every transfer
 that was submitted. Connecting after the run finished sends the `report` at once. A run's report is
