@@ -1,12 +1,14 @@
 package com.siddheshfulawade.settlementlab.api;
 
 import java.time.Clock;
-import java.util.Set;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.Environment;
-import org.springframework.core.env.Profiles;
+import org.springframework.context.annotation.Profile;
+import tools.jackson.databind.cfg.CoercionAction;
+import tools.jackson.databind.cfg.CoercionInputShape;
+import tools.jackson.databind.type.LogicalType;
 
 /** Wires the runs API: limits, registry, CORS and the body cap. Active in every profile, {@code prod} included. */
 @Configuration(proxyBeanMethods = false)
@@ -41,10 +43,26 @@ class RunsConfiguration {
         return new RunCorsFilter(properties.previewOrigin());
     }
 
-    /** The runs endpoint always; the local transfer endpoint too unless the {@code prod} profile hides it. */
+    /** Every POST body is capped at 16 KB, in every profile (REQ-API-009). */
     @Bean
-    BodyLimitFilter bodyLimitFilter(Environment environment) {
-        boolean prod = environment.acceptsProfiles(Profiles.of("prod"));
-        return new BodyLimitFilter(prod ? Set.of("/api/v1/runs") : Set.of("/api/v1/runs", "/api/v1/transfers"));
+    BodyLimitFilter bodyLimitFilter() {
+        return new BodyLimitFilter();
+    }
+
+    /** The public service answers 404 for everything but the runs API and health (REQ-API-010). */
+    @Bean
+    @Profile("prod")
+    ProdAllowListFilter prodAllowListFilter() {
+        return new ProdAllowListFilter();
+    }
+
+    /** A JSON number or boolean is not a string: {@code "id": 5} is a 400, not the id "5" (REQ-API-009). */
+    @Bean
+    JsonMapperBuilderCustomizer strictStrings() {
+        return builder -> builder.withCoercionConfig(
+                LogicalType.Textual,
+                config -> config.setCoercion(CoercionInputShape.Integer, CoercionAction.Fail)
+                        .setCoercion(CoercionInputShape.Float, CoercionAction.Fail)
+                        .setCoercion(CoercionInputShape.Boolean, CoercionAction.Fail));
     }
 }

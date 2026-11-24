@@ -145,8 +145,7 @@ class RunContractHttpTest {
     @Test
     @DisplayName("REQ-RUN-003 an unknown run, or an id that is not a valid run id, is 404 run-not-found")
     void unknownRunIs404() throws Exception {
-        List<String> ids =
-                List.of("r-00000000", "nope", "x".repeat(65), "r-1.2", "r%20x", "%C3%A9", "r_1", "..%2F..%2Factuator");
+        List<String> ids = List.of("r-00000000", "nope", "x".repeat(65), "r-1.2", "r%20x", "%C3%A9", "r_1");
         for (String id : ids) {
             for (String path : List.of("/api/v1/runs/" + id, "/api/v1/runs/" + id + "/events")) {
                 HttpResponse<String> response = RunHttp.get(port, path);
@@ -161,6 +160,15 @@ class RunContractHttpTest {
                 assertThat((Integer) JsonPath.read(response.body(), "$.status")).isEqualTo(404);
             }
         }
+    }
+
+    @Test
+    @DisplayName("an encoded slash in a run id is refused by the server itself and reaches no other endpoint")
+    void encodedSlashIsRefused() throws Exception {
+        HttpResponse<String> response = RunHttp.get(port, "/api/v1/runs/..%2F..%2Factuator%2Fhealth");
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).doesNotContain("UP");
     }
 
     @Test

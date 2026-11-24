@@ -746,4 +746,23 @@ class RunServiceTest {
                         .as("run-owned threads after close")
                         .isLessThanOrEqualTo(before));
     }
+
+    @Test
+    @DisplayName("REQ-RUN-006 an idle service forgets a visitor by itself when the window passes")
+    void idleServiceForgetsVisitors() {
+        MutableClock clock = MutableClock.frozen(java.time.Instant.parse("2026-11-24T00:00:00Z"));
+        try (RunService service =
+                new RunService(RunsProperties.defaults(), clock, null, java.time.Duration.ofMillis(20))) {
+            assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> service.start(BIG, IP)))
+                    .as("no factory: the start fails after the window entry was taken")
+                    .isInstanceOf(NullPointerException.class);
+            assertThat(service.trackedVisitors()).isEqualTo(1);
+
+            clock.advance(java.time.Duration.ofHours(1)); // and nobody calls the service again
+
+            org.awaitility.Awaitility.await()
+                    .atMost(java.time.Duration.ofSeconds(10))
+                    .until(() -> service.trackedVisitors() == 0);
+        }
+    }
 }

@@ -58,6 +58,10 @@ final class RunService implements AutoCloseable {
     private static final Duration CLOSE_DRAIN = Duration.ofSeconds(1);
 
     private static final Duration SHUTDOWN_WAIT = Duration.ofSeconds(3);
+
+    /** How often an idle service forgets visitors whose hour has passed (REQ-RUN-006). */
+    private static final Duration FORGET_INTERVAL = Duration.ofSeconds(10);
+
     private static final Pattern RUN_ID = Pattern.compile("[A-Za-z0-9-]{1,64}");
     private static final Logger LOG = LoggerFactory.getLogger(RunService.class);
 
@@ -75,6 +79,10 @@ final class RunService implements AutoCloseable {
     }
 
     RunService(RunsProperties properties, Clock clock, RuntimeFactory factory) {
+        this(properties, clock, factory, FORGET_INTERVAL);
+    }
+
+    RunService(RunsProperties properties, Clock clock, RuntimeFactory factory, Duration forgetInterval) {
         this.properties = properties;
         this.clock = clock;
         this.factory = factory;
@@ -88,6 +96,8 @@ final class RunService implements AutoCloseable {
             return thread;
         });
         this.sampler.setRemoveOnCancelPolicy(true);
+        this.sampler.scheduleWithFixedDelay(
+                limits::forgetOldStarts, forgetInterval.toNanos(), forgetInterval.toNanos(), TimeUnit.NANOSECONDS);
     }
 
     /** Runs use the fault profile with this service's outage window. */
@@ -156,6 +166,11 @@ final class RunService implements AutoCloseable {
             return Optional.empty();
         }
         return Optional.ofNullable(runs.get(runId));
+    }
+
+    /** Visitors the limiter still remembers. */
+    int trackedVisitors() {
+        return limits.trackedClients();
     }
 
     int storedRuns() {

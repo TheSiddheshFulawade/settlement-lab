@@ -190,4 +190,23 @@ class RunHeldHttpTest {
         }
         awaitReport(runId);
     }
+
+    @Test
+    @DisplayName("api-contract 3: an EventSource (Accept: text/event-stream) still gets problem details with CORS")
+    void eventSourceErrorsAreProblemDetails() throws Exception {
+        java.net.http.HttpResponse<String> response = java.net.http.HttpClient.newHttpClient()
+                .send(
+                        java.net.http.HttpRequest.newBuilder(
+                                        java.net.URI.create("http://localhost:" + port + "/api/v1/runs/nope/events"))
+                                .header("Accept", "text/event-stream")
+                                .header("Origin", "https://siddheshfulawade.com")
+                                .build(),
+                        java.net.http.HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(response.headers().firstValue("Content-Type").orElse("")).startsWith("application/problem+json");
+        assertThat(response.body()).contains("/problems/run-not-found");
+        assertThat(response.headers().firstValue("Access-Control-Allow-Origin"))
+                .contains("https://siddheshfulawade.com");
+    }
 }

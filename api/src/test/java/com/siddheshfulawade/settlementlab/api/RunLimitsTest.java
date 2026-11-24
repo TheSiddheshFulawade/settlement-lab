@@ -260,4 +260,17 @@ class RunLimitsTest {
         assertRefused(ipAndBusy.tryStart(A), RunLimits.Limit.PER_IP);
         active.release();
     }
+
+    @Test
+    @DisplayName("REQ-RUN-006 a visitor is forgotten once the window passes even if nobody starts another run")
+    void forgetsVisitorsWithoutAnotherStart() {
+        MutableClock clock = MutableClock.frozen(java.time.Instant.parse("2026-11-24T00:00:00Z"));
+        RunLimits limits = new RunLimits(clock, 5, 60, 2);
+        limits.tryStart("198.51.100.7");
+
+        clock.advance(java.time.Duration.ofHours(1));
+        limits.forgetOldStarts();
+
+        assertThat(limits.trackedClients()).isZero();
+    }
 }

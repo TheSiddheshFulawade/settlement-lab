@@ -13,7 +13,6 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.Set;
 import org.springframework.core.Ordered;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -31,15 +30,6 @@ final class BodyLimitFilter extends OncePerRequestFilter implements Ordered {
 
     static final int MAX_BYTES = 16 * 1024;
 
-    private final Set<String> limitedPaths;
-
-    /**
-     * @param limitedPaths the exact paths whose POST bodies are capped
-     */
-    BodyLimitFilter(Set<String> limitedPaths) {
-        this.limitedPaths = Set.copyOf(limitedPaths);
-    }
-
     @Override
     public int getOrder() {
         return Ordered.HIGHEST_PRECEDENCE + 20; // after CORS, so the 413 carries the CORS headers
@@ -47,7 +37,9 @@ final class BodyLimitFilter extends OncePerRequestFilter implements Ordered {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !"POST".equals(request.getMethod()) || !limitedPaths.contains(request.getRequestURI());
+        // By method, not by path: "/runs;x=1" or "/%72uns" reach the same handler as "/runs", so a list of
+        // paths could be walked around. No endpoint here needs a larger body.
+        return !"POST".equals(request.getMethod());
     }
 
     @Override

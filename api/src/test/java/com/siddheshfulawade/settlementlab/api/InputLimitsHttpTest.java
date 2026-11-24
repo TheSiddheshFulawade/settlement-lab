@@ -149,4 +149,21 @@ class InputLimitsHttpTest {
         assertThat(foreign.headers().map().keySet())
                 .noneMatch(name -> name.toLowerCase().startsWith("access-control-"));
     }
+
+    @Test
+    @DisplayName("REQ-API-009 another spelling of the path does not get past the 16 KB cap")
+    void oversizedBodyOnAnotherSpellingOfThePathIsNotAccepted() throws Exception {
+        String run = padded(RunHttp.QUICK_RUN, LIMIT + 1);
+        String transfer = padded("{\"id\":\"spelling-1\",\"source\":1,\"target\":2,\"amount\":1}", LIMIT + 1);
+        for (String path : new String[] {"/api/v1/runs;x=1", "/api/v1;x=1/runs", "/api/v1/%72uns", "/api//v1/runs"}) {
+            assertThat(send(path, chunked(run), null, RunHttp.nextIp()).statusCode())
+                    .as(path)
+                    .isBetween(400, 499);
+        }
+        for (String path : new String[] {"/api/v1/transfers;x=1", "/api/v1/%74ransfers"}) {
+            assertThat(send(path, chunked(transfer), null, null).statusCode())
+                    .as(path)
+                    .isBetween(400, 499);
+        }
+    }
 }

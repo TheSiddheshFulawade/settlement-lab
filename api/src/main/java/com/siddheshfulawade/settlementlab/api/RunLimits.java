@@ -21,7 +21,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * Time comes from the injected {@link Clock} (wall time), never from the system, so tests move it.
  *
  * <p>Memory: a visitor's entry is removed as soon as its last start leaves the window, on any later call
- * (not only a call from that visitor). At most {@code globalPerHour} starts are held, so at most that many
+ * (not only a call from that visitor), and {@link RunService} calls {@link #forgetOldStarts()} on a timer so an
+ * idle service forgets too (REQ-RUN-006). At most {@code globalPerHour} starts are held, so at most that many
  * visitors are. Keys are held only here and are never logged, thrown in a message or printed.
  */
 final class RunLimits {
@@ -91,6 +92,16 @@ final class RunLimits {
         lock.lock();
         try {
             return clientStarts.size();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Drops every start and visitor whose window has passed. */
+    void forgetOldStarts() {
+        lock.lock();
+        try {
+            forgetOldStarts(clock.instant());
         } finally {
             lock.unlock();
         }
