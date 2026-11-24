@@ -71,7 +71,7 @@ data:  "glRetries":845,"breakerState":"CLOSED","outboxSize":1070}
 | `queueDepth` / `queueCapacity` | intake queue fill |
 | `glRetries` | general-ledger retries so far |
 | `breakerState` | `CLOSED`, `OPEN`, `HALF_OPEN` |
-| `outboxSize` | postings waiting for the general ledger |
+| `outboxSize` | postings waiting for the general ledger (waiting for a sender, being sent, or in the outbox) |
 
 ### `report` (once, then the server closes the stream)
 

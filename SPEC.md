@@ -478,8 +478,8 @@ runs (v3 stays a local and CI experiment), custom workloads beyond the fields be
 - OUTAGE in a run refuses everything from 1 s to 4 s after the start, so runs under 2,000 transfers
   end their submissions before it begins (the app's 30 s default start would never be reached).
 - A sampler on a scheduled executor reads `EngineMetrics`, the publisher's retry and breaker counters
-  and the outbox size every 250 ms and pushes one `metrics` event per subscriber through a bounded
-  buffer (the V2-04 per-subscriber buffer, reused); a full buffer drops the oldest `metrics` event,
+  and the postings waiting for the general ledger (waiting for a sender, being sent, or in the outbox)
+  every 250 ms and pushes one `metrics` event per subscriber through a bounded buffer (the V2-04 per-subscriber buffer, reused); a full buffer drops the oldest `metrics` event,
   never the `report`.
 - Limits: a per-IP sliding window (5 per hour) and a global window (60 per hour), plus a semaphore of
   2 active runs, all in memory. One instance only (Cloud Run max instances 1, ADR-0002), so in-memory

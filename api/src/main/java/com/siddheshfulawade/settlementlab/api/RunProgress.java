@@ -116,7 +116,8 @@ final class RunProgress {
                 runtime.properties().queueCapacity(),
                 runtime.resilient().retries(),
                 runtime.resilient().breakerState(),
-                runtime.outbox().outboxSize());
+                // Contract: postings waiting for the general ledger, not only those parked in the outbox.
+                runtime.outbox().pendingCount());
     }
 
     /**

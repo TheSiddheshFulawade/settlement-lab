@@ -131,6 +131,52 @@ class OutboxPublisherTest {
     }
 
     @Test
+    @DisplayName("REQ-LAB-011 pendingCount counts postings waiting for a sender or being sent; outboxSize does not")
+    void pendingCountIncludesPostingsWaitingForASender() {
+        CountDownLatch gate = new CountDownLatch(1);
+        GeneralLedgerPort gated = posting -> {
+            try {
+                gate.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return GeneralLedgerPort.Ack.RECORDED;
+        };
+        try (var async = new OutboxPublisher(gated, RETRY, 4)) {
+            for (long i = 1; i <= 20; i++) {
+                async.publish(posting(i));
+            }
+
+            assertThat(async.pendingCount())
+                    .as("4 being sent + 16 waiting for a sender")
+                    .isEqualTo(20);
+            assertThat(async.outboxSize()).as("none has failed yet").isZero();
+
+            gate.countDown();
+            assertThat(async.drain(WAIT)).isTrue();
+            assertThat(async.pendingCount()).isZero();
+            assertThat(async.published()).isEqualTo(20);
+        }
+    }
+
+    @Test
+    @DisplayName("REQ-LAB-011 a posting waiting for the relay is counted once in pendingCount, and 0 after the drain")
+    void pendingCountCountsAnOutboxEntryOnce() {
+        port.down.set(true);
+        for (long i = 1; i <= 5; i++) {
+            publisher.publish(posting(i));
+        }
+        await().atMost(WAIT).until(() -> publisher.outboxSize() == 5);
+        assertThat(publisher.pendingCount()).isEqualTo(5);
+
+        port.down.set(false);
+
+        assertThat(publisher.drain(WAIT)).isTrue();
+        assertThat(publisher.pendingCount()).isZero();
+        assertThat(publisher.outboxSize()).isZero();
+    }
+
+    @Test
     @DisplayName("close stops the relay and is idempotent")
     void closeIsIdempotent() {
         publisher.close();
