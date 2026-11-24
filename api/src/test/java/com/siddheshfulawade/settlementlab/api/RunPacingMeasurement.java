@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.locks.LockSupport;
 import org.slf4j.LoggerFactory;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * TEMPORARY (V2-07 pacing question, removed before the PR leaves draft). Runs full-size runs in this JVM
@@ -53,7 +54,25 @@ final class RunPacingMeasurement {
                 request(LedgerChoice.LOCKING, ThreadMode.VIRTUAL, FaultChoice.OUTAGE),
                 request(LedgerChoice.CAS, ThreadMode.PLATFORM, FaultChoice.OUTAGE));
         probeSixteen(label + " | after");
+        sample(label, lockingVirtual);
         System.exit(0);
+    }
+
+    /** One complete event stream, as JSON, for the contract's examples. */
+    private static void sample(String label, RunRequest request) {
+        RecordingSink sink = RecordingSink.normal();
+        try (RunService service = new RunService(RunsProperties.defaults(), Clock.systemUTC())) {
+            Run run = service.start(request, "measurement");
+            run.subscribe(sink);
+            while (run.isRunning() || !sink.isClosed()) {
+                LockSupport.parkNanos(50_000_000);
+            }
+        }
+        JsonMapper mapper = new JsonMapper();
+        for (RunEvent event : sink.events) {
+            System.out.println(
+                    "PACING " + label + " | sample " + event.name() + " " + mapper.writeValueAsString(event.data()));
+        }
     }
 
     private static RunRequest request(LedgerChoice ledger, ThreadMode threads, FaultChoice faults) {
