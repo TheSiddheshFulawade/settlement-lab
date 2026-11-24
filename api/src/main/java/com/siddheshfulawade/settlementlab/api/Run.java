@@ -40,6 +40,9 @@ final class Run {
     /** How long {@link #end()} waits for each stream to close before moving on. */
     private static final Duration CLOSE_WAIT = Duration.ofMillis(200);
 
+    /** A run without a report this long after its 202 is lost (REQ-RUN-005); the one copy of the 60 s. */
+    static final Duration REPORT_LIMIT = Duration.ofSeconds(60);
+
     private enum State {
         RUNNING,
         DONE,
@@ -52,7 +55,6 @@ final class Run {
     private final int maxSubscribers;
     private final int eventBuffer;
     private final Admission admission;
-    private final Supplier<RunMetrics> metricsSource;
 
     private final ReentrantLock lock = new ReentrantLock();
     private State state = State.RUNNING; // guarded by lock
@@ -61,6 +63,15 @@ final class Run {
     private volatile RunReport report;
     private volatile Instant endedAt; // when it became DONE or ENDED
     private volatile boolean stopRequested;
+    /**
+     * Invariant (nothing leaks past RUNNING): a run that is DONE or ENDED reaches neither its metrics source nor
+     * its driver, and so not the engine stack ({@link SettlementRuntime}) they lead to. {@code metricsSource} is
+     * dropped when the run leaves RUNNING; {@code driver} is dropped by the driver itself as its very last step
+     * ({@link #driverDone}), so {@link #awaitDriver} can still wait for a live one. Both are read once into a local
+     * before use, because the other side may null them at any moment.
+     */
+    private volatile Supplier<RunMetrics> metricsSource;
+
     private volatile Thread driver;
     private volatile ScheduledFuture<?> sampling;
 
@@ -176,10 +187,11 @@ final class Run {
 
     /** One sampler tick: offer the current metrics to every subscriber, if the run is still going. */
     void sample() {
-        if (!isRunning()) {
+        Supplier<RunMetrics> source = metricsSource;
+        if (source == null || !isRunning()) {
             return;
         }
-        RunMetrics metrics = metricsSource.get(); // read outside the lock: a few atomics and a sort
+        RunMetrics metrics = source.get(); // read outside the lock: a few atomics and a sort
         RunEvent event = new RunEvent(RunEvent.METRICS, metrics);
         lock.lock();
         try {
@@ -200,6 +212,12 @@ final class Run {
      * @return false if the run had already ended (expired or stopped); the report is then discarded
      */
     boolean finish(RunReport finalReport, Instant now) {
+        // Invariant (REQ-RUN-005): no report is published 60 s or more after the start. A late one is treated as
+        // an expired run, so the viewer never sees a report the lookup rule would already have refused.
+        if (!now.isBefore(startedAt.plus(REPORT_LIMIT))) {
+            end(now);
+            return false;
+        }
         lock.lock();
         try {
             if (state != State.RUNNING) {
@@ -208,6 +226,7 @@ final class Run {
             state = State.DONE;
             endedAt = now;
             report = finalReport; // volatile: GET sees DONE and the report together
+            metricsSource = null;
             for (RunSubscriber subscriber : subscribers) {
                 subscriber.offerReport(new RunEvent(RunEvent.REPORT, finalReport));
             }
@@ -237,6 +256,7 @@ final class Run {
             state = State.ENDED;
             endedAt = now;
             stopRequested = true;
+            metricsSource = null;
             toClose = new ArrayList<>(subscribers);
         } finally {
             lock.unlock();
@@ -254,6 +274,12 @@ final class Run {
     /** The driver calls this last, on every path: the slot is free once the engine is closed. */
     void releaseSlot() {
         admission.release(); // idempotent: end() may have released it already
+    }
+
+    /** The driver's last step, after its engine is closed and the slot released: forget the thread. */
+    void driverDone() {
+        driver = null;
+        metricsSource = null;
     }
 
     private void stopSampling() {

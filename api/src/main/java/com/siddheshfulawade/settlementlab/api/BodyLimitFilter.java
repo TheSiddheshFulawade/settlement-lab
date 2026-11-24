@@ -17,7 +17,7 @@ import org.springframework.core.Ordered;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Caps a POST body at 16 KB (REQ-API-009): 413 {@code body-too-large}, before anything is parsed or
+ * Caps a request body (any method except GET, HEAD and OPTIONS) at 16 KB (REQ-API-009): 413 {@code body-too-large}, before anything is parsed or
  * submitted.
  *
  * <p>Invariant: the filter never holds more than {@code MAX_BYTES + 1} bytes of a body, whatever the
@@ -38,8 +38,10 @@ final class BodyLimitFilter extends OncePerRequestFilter implements Ordered {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         // By method, not by path: "/runs;x=1" or "/%72uns" reach the same handler as "/runs", so a list of
-        // paths could be walked around. No endpoint here needs a larger body.
-        return !"POST".equals(request.getMethod());
+        // paths could be walked around. Every method that may carry a body is capped (PUT, PATCH, DELETE too);
+        // no endpoint here needs a larger one.
+        String method = request.getMethod();
+        return "GET".equals(method) || "HEAD".equals(method) || "OPTIONS".equals(method);
     }
 
     @Override

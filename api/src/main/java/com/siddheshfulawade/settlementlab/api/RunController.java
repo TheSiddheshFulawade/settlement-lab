@@ -6,12 +6,15 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -68,6 +71,17 @@ class RunController {
         Run run = service.find(id).orElseThrow(RunNotFoundException::new);
         Object body = run.report().<Object>map(report -> report).orElseGet(() -> new Status(run.id(), run.status()));
         return ResponseEntity.ok(body);
+    }
+
+    /**
+     * Spring would answer HEAD with this GET handler, which subscribes and takes one of the run's two viewer
+     * places (REQ-RUN-011). Invariant: HEAD never reaches {@link Run#subscribe}; it is a plain 405.
+     */
+    @RequestMapping(value = "/{id}/events", method = RequestMethod.HEAD)
+    ResponseEntity<Void> eventsHead() {
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .allow(HttpMethod.GET)
+                .build();
     }
 
     @GetMapping(value = "/{id}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

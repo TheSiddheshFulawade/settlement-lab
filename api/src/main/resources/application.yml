@@ -5,6 +5,9 @@ spring:
   mvc:
     problemdetails:
       enabled: true # RFC 9457 bodies for malformed or invalid requests (REQ-API-003)
+    formcontent:
+      filter:
+        enabled: false # that filter reads a PUT/PATCH/DELETE form body into memory; nothing here takes forms (REQ-API-009)
   web:
     resources:
       add-mappings: false # no static files: an unknown path (any method) is a 404, never a 405 from the file handler

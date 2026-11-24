@@ -48,9 +48,6 @@ final class RunService implements AutoCloseable {
         SettlementRuntime start(SettlementProperties properties, SettlementListener listener);
     }
 
-    /** A run without a report after this long is lost (REQ-RUN-005). */
-    private static final Duration REPORT_LIMIT = Duration.ofSeconds(60);
-
     private static final int WORKERS = 8;
     private static final int QUEUE_CAPACITY = 1_024;
     private static final Duration OFFER_TIMEOUT = Duration.ofMillis(100);
@@ -59,7 +56,7 @@ final class RunService implements AutoCloseable {
 
     private static final Duration SHUTDOWN_WAIT = Duration.ofSeconds(3);
 
-    /** How often an idle service forgets visitors whose hour has passed (REQ-RUN-006). */
+    /** How often an idle service forgets old visitors (REQ-RUN-006), ends lost runs and drops old reports. */
     private static final Duration FORGET_INTERVAL = Duration.ofSeconds(10);
 
     private static final Pattern RUN_ID = Pattern.compile("[A-Za-z0-9-]{1,64}");
@@ -97,7 +94,7 @@ final class RunService implements AutoCloseable {
         });
         this.sampler.setRemoveOnCancelPolicy(true);
         this.sampler.scheduleWithFixedDelay(
-                limits::forgetOldStarts, forgetInterval.toNanos(), forgetInterval.toNanos(), TimeUnit.NANOSECONDS);
+                this::forgetSafely, forgetInterval.toNanos(), forgetInterval.toNanos(), TimeUnit.NANOSECONDS);
     }
 
     /** Runs use the fault profile with this service's outage window. */
@@ -183,7 +180,7 @@ final class RunService implements AutoCloseable {
         for (Run run : runs.values()) {
             if (run.isRunning()) {
                 // end() is a no-op if the run finished in the meantime; then it stays (and is DONE).
-                if (!now.isBefore(run.startedAt().plus(REPORT_LIMIT)) && run.end(now)) {
+                if (!now.isBefore(run.startedAt().plus(Run.REPORT_LIMIT)) && run.end(now)) {
                     runs.remove(run.id(), run);
                 }
             } else if (run.isEnded()) {
@@ -191,6 +188,19 @@ final class RunService implements AutoCloseable {
             } else if (!now.isBefore(run.endedAt().plus(properties.retention()))) {
                 runs.remove(run.id(), run); // DONE and past retention
             }
+        }
+    }
+
+    /**
+     * The timer tick. Invariant: it never throws, because a scheduled task that throws is never run again.
+     * expireAndForget is idempotent and safe beside the per-request call (end() wins once, remove is by value).
+     */
+    private void forgetSafely() {
+        try {
+            limits.forgetOldStarts();
+            expireAndForget();
+        } catch (RuntimeException failure) {
+            LOG.warn("forgetting old runs failed: {}", failure.getClass().getSimpleName());
         }
     }
 

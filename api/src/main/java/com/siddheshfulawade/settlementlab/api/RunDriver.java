@@ -44,7 +44,7 @@ final class RunDriver implements Runnable {
     private static final int HOT_PERCENT = 20;
 
     /** The report must be out within 60 s of the 202 (REQ-RUN-005); the drain gives up this long before. */
-    private static final Duration REPORT_BOUND = Duration.ofSeconds(60);
+    private static final Duration REPORT_BOUND = Run.REPORT_LIMIT;
 
     private static final Duration DRAIN_MARGIN = Duration.ofSeconds(5);
     private static final Duration DRAIN_SLICE = Duration.ofMillis(100);
@@ -93,13 +93,30 @@ final class RunDriver implements Runnable {
                 run.finish(report, clock.instant());
             }
         } catch (RuntimeException failure) {
-            // The class name only: a message could hold anything, and nothing here is about a visitor.
-            LOG.warn("run {} failed: {}", run.id(), failure.getClass().getSimpleName());
-            run.end(clock.instant());
+            failed(failure);
+        } catch (Error failure) {
+            // An Error also ends this run: otherwise it would sit RUNNING for 60 s. It is then rethrown (the
+            // JVM's business, not ours to swallow); the finally below still runs.
+            failed(failure);
+            throw failure;
         } finally {
-            closeRuntime();
-            run.releaseSlot();
+            // Each step runs even if the one before it throws: runtime closed, slot given back, thread forgotten.
+            try {
+                closeRuntime();
+            } finally {
+                try {
+                    run.releaseSlot();
+                } finally {
+                    run.driverDone();
+                }
+            }
         }
+    }
+
+    private void failed(Throwable failure) {
+        // The class name only: a message could hold anything, and nothing here is about a visitor.
+        LOG.warn("run {} failed: {}", run.id(), failure.getClass().getSimpleName());
+        run.end(clock.instant());
     }
 
     // ---- submitting ----------------------------------------------------------------------------------
