@@ -4,10 +4,13 @@ A concurrency-safe settlement engine: move money between accounts concurrently w
 or losing any, under duplicates, downstream failures and overload. Then measure locking and threading
 choices. Write-up: https://siddheshfulawade.com/projects/settlement-lab
 
-v1 is a plain Java library and a command-line runner (module `engine`). v2, in progress, wraps it
-in a Spring Boot HTTP API (module `api`); the engine still never imports Spring.
-[SPEC.md](SPEC.md) has the requirements (REQ-LAB-001 to 016, REQ-API-001 to 007), the design and the
-task lists.
+v1 is a plain Java library and a command-line runner (module `engine`). v2 wraps it in a Spring Boot
+HTTP API (module `api`): it is built and tested, and not deployed yet (V2-06 waits for the owner's
+yes). The engine still never imports Spring. v3 adds a PostgreSQL ledger (module `ledger-postgres`),
+tested in CI on Linux, not wired into the API, and not measured yet (see Database results).
+[SPEC.md](SPEC.md) has the requirements (REQ-LAB-001 to 016, REQ-API-001 to 010, REQ-RUN-001 to 013),
+the design and the task lists. The HTTP contract of the runs API is in
+[docs/api-contract.md](docs/api-contract.md).
 
 ## Problem
 
@@ -100,24 +103,28 @@ Numbers are from this lab on that machine, a single run, never from a production
 
 What the numbers say (and what they do not):
 
-- **Ordered locking beat CAS by about 3 to 4.5 times** on throughput (2.8× to 4.6× per cell), with
-  a lower p99 in every pair. With 10,000
-  accounts, every CAS write copies an 80 KB balance array, and a failed swap throws that copy away
-  and starts again; per-account locks touch two accounts only. CAS losing here is a valid result:
-  its cost grows with the table size and with contention. With a small table and many readers the
-  balance could tip the other way; this run did not test that.
-- **Platform vs virtual threads: no clear throughput winner** at the same cap (N = 8). Platform was
-  faster for locking with no faults (249k vs 182k/s); the other pairs are within about 10 %. The
+- **Ordered locking beat CAS by 2.9x to 4.6x** on throughput (the range over the six pairs), with a
+  lower p50 and p99 in every pair. With 10,000 accounts, every CAS write copies an 80 KB balance array,
+  and a failed swap throws that copy away and starts again; per-account locks touch two accounts only.
+  CAS losing here is a valid result: its cost grows with the table size and with contention. With a
+  small table and many readers the balance could tip the other way; this run did not test that.
+- **Platform vs virtual threads: no clear throughput winner** at the same cap (N = 8): platform was
+  faster in three pairs and virtual in three. Platform was 1.37x faster for locking with no faults
+  (248,861 vs 181,706/s); in the other five pairs the faster mode led by 2.7 % to 10.2 %. The
   work is short and CPU-bound, so virtual threads have little blocking to hide. **Virtual threads
-  had the lower p99 in all six pairs** (for example 800 vs 2,008 µs), with a somewhat higher p50.
+  had the lower p99 in all six pairs** (for example 800 vs 2,008 µs), with a higher p50 in all six
+  (by 15 % to 86 %).
   One run on 4 cores: the direction is worth a repeat run, the exact ratios are not to be trusted.
-- **Faults cost some throughput, not a collapse**: for locking, FLAKY cost up to about 13 % and
-  OUTAGE up to about 30 %; CAS moved within noise. Publishing runs off the worker threads, so these
-  rates are not general-ledger delivery rates (the runs API, paced at 2,000 transfers/s, needs about
-  14 s on Linux CI runners to submit and deliver 20,000 under FLAKY:
-  `docs/learn/v2-07-runs-api.md`). FLAKY needed about 16,700 retries, but only 3 postings ever
-  reached the outbox. OUTAGE opened the breaker once per cell; the outbox held up to about 95,000
-  postings (the 1 s outage outlasts the run) and drained them all afterwards.
+- **Faults did not collapse throughput**: against the NONE cell with the same ledger and threads, the
+  largest drops were 30.6 % (OUTAGE) and 13.3 % (FLAKY), both for locking on platform threads. Locking
+  on virtual threads was 24.2 % *faster* under FLAKY and 8.7 % slower under OUTAGE; CAS moved between
+  −7.7 % and +10.8 %. One run cannot separate such differences from noise. Publishing runs off the
+  worker threads, so these rates are not general-ledger delivery rates (the runs API,
+  paced at 2,000 transfers/s, needs about 14 s on Linux CI runners to submit and deliver 20,000 under FLAKY:
+  `docs/learn/v2-07-runs-api.md`). FLAKY needed 16,739 to 16,777 retries per cell, and the
+  outbox never held more than 3 postings at once. OUTAGE opened the breaker once per cell; the outbox
+  peaked at 86,480 to 95,181 postings (the breaker's 2 s open wait outlasts every OUTAGE cell, 0.58 s to
+  1.84 s) and drained them all afterwards.
 - **Every invariant passed in every cell**: total conserved, no negative balance, each transfer
   posted at most once, postings explain the balances, postings match accepted transfers, and the
   GL holds exactly the ledger's postings.
@@ -125,12 +132,15 @@ What the numbers say (and what they do not):
 ### Database results
 
 `results/results-db.md` (pessimistic and optimistic PostgreSQL cells) is produced locally, not in CI, with
-the command below (needs Docker). It will be committed after a local run; Docker is currently unavailable,
-so there are no database numbers yet.
+the command below (needs Docker). There are no database numbers yet.
 
 ```bash
 mvnw.cmd -Pdb -pl ledger-postgres -am test-compile exec:java -Dexec.classpathScope=test -Dexec.mainClass=com.siddheshfulawade.settlementlab.postgres.DbResultsMain
 ```
+
+**Known broken.** This command was run on 2026-11-24 and fails with `ClassNotFoundException` on the
+parent module: `-am` makes `exec:java` run on the parent project first, before any Docker step. The fix
+is open, so no working command is printed here yet.
 
 ## How to run
 
@@ -152,7 +162,7 @@ invariant fails):
 Options: `--accounts`, `--transfers`, `--hot-accounts`, `--hot-percent`, `--duplicate-percent`,
 `--seed`, `--out`.
 
-Start the HTTP API (v2, in progress; settings under `settlement.*`, see `api/src/main/resources/application.yml`):
+Start the HTTP API (settings under `settlement.*`, see `api/src/main/resources/application.yml`):
 
 ```bash
 ./mvnw -q -pl api -am package -DskipTests
@@ -162,12 +172,75 @@ Start the HTTP API (v2, in progress; settings under `settlement.*`, see `api/src
 java -jar api/target/settlement-lab-api-0.1.0-SNAPSHOT.jar --settlement.ledger=CAS --settlement.faults=FLAKY
 ```
 
+`application.yml` sets no `server.port`, so the API listens on Spring Boot's default, 8080
+(`http://localhost:8080`).
+
+### The HTTP load check
+
+With the API running, a black-box client can check it from the outside. The class is
+`HttpLoadCheckMain`, in the api module's test sources, so it needs the test classpath. Two steps, both
+run in Git Bash on Windows. First write the classpath to a file (the path **must be absolute**, and on
+Windows in `D:/...` form):
+
+```bash
+mvnw.cmd -q -pl api -am test-compile org.apache.maven.plugins:maven-dependency-plugin:3.11.0:build-classpath "-Dmdep.outputFile=D:/path/to/settlement-lab/api/target/loadcheck.cp" -Dmdep.includeScope=test
+```
+
+Then run the check:
+
+```bash
+java -cp "api/target/test-classes;api/target/classes;$(cat api/target/loadcheck.cp)" com.siddheshfulawade.settlementlab.api.HttpLoadCheckMain http://localhost:8080
+```
+
+On Linux and macOS the same two commands should work with `./mvnw` and `:` instead of `;` in the
+classpath. That form has not been tried yet. No `cmd.exe` or PowerShell form is given, because none was tried.
+
+- Options: `--operations` (default 1,500), `--clients` (32), `--seed`, `--run-transfers` (2,000),
+  `--ledger LOCKING|CAS`, `--threads PLATFORM|VIRTUAL`, `--runs-only`. Sizes outside their range are
+  refused with exit 2: `--operations` and `--clients` at least 1, `--run-transfers` 1 to 20,000 (the
+  server's own cap). A URL with a user name or password is refused too, and never printed.
+- **Default mode** sends a seeded mix of transfers, then starts one run. It refuses any host that is not
+  loopback (`localhost`, `127.x.x.x`, `::1`; names are checked as text, with no DNS lookup), because it
+  sends thousands of transfers and is for a server you own.
+- **`--runs-only`** does exactly one run and nothing else: no transfer, account or metrics request. Any
+  host is allowed. Use it for a server that serves only runs, such as the public one will (REQ-API-010).
+- **Exit codes:** 0 every check passed, 1 a check failed (or the check could not finish), 2 refused or
+  bad arguments.
+
+The client does not trust the server to behave: it uses no proxy, follows no redirect, and bounds every
+request and body in time and size. All clients share one 120 s deadline for the transfer load, after
+which they stop sending. An empty list of checks is never a pass.
+
+What it proves: over real HTTP, the 9 transfer checks and 10 run checks (19 in all) all print `PASS`.
+They are named (for example `TOTAL_CONSERVED`, `REPEATS_GET_ORIGINAL_STATUS`,
+`GL_ONE_ENTRY_PER_POSTING`, `RUN_ALL_SIX_INVARIANTS_PASSED`), and a red line says what broke. One of
+them, `MIX_PRODUCED`, fails if the load did not really produce posted, rejected-for-funds and invalid
+transfers and a repeated request. So a very small `--operations` can turn it red. That is correct: a
+load too small to produce the whole mix proves little, and a check list that passes on an empty load
+would be worse. Three deliberate bugs in the engine turned the matching checks red (see
+[docs/learn/v2-05-load-check.md](docs/learn/v2-05-load-check.md)).
+What it does not prove: it is a correctness check, **not a benchmark**. It makes no throughput claim, and
+a pass says nothing about speed. One real run against a local jar, on the laptop: 1,500 transfers decided
+(2,175 transfer POSTs, 4,181 requests in all), 1,283 posted, 675 repeats answered with the original
+status, total money 10,000,000 before and after, all 19 checks `PASS`.
+
 ## What v2 adds
 
-A Spring Boot API at `api.siddheshfulawade.com` that wraps `SettlementEngine` (submit, snapshot,
-metrics), a server-sent event stream from the engine listener, persistence (a transactional outbox
-in a database instead of memory), idempotency-key expiry, and a small UI. The engine stays
-framework-free.
+A Spring Boot API (module `api`) that wraps `SettlementEngine` and keeps the engine framework-free. It
+is built, and not deployed: `api.siddheshfulawade.com` is V2-06 and waits for the owner's explicit yes.
+
+- `POST /api/v1/transfers`, with idempotent replay and RFC 9457 problem details (REQ-API-001 to 003,
+  REQ-API-009).
+- `GET /api/v1/accounts/{id}` and `GET /api/v1/metrics` (REQ-API-004).
+- `GET /api/v1/events`, a server-sent event stream of outcomes with a bounded buffer per subscriber
+  (REQ-API-005).
+- The runs API for the portfolio page: start a run, watch live metrics, read the invariant report, with
+  limits and CORS (REQ-RUN-001 to 013; contract in [docs/api-contract.md](docs/api-contract.md)).
+  In the `prod` profile only the runs and `/actuator/health` are served (REQ-API-010).
+- Graceful shutdown (REQ-API-006), and the black-box HTTP load check above.
+
+Not in v2: a UI, authentication, and a database. The API runs on the in-memory ledgers; the PostgreSQL
+ledger is v3 and stays a local and CI experiment.
 
 ## Decisions
 
@@ -364,6 +437,24 @@ framework-free.
 - **Chosen:** a run's status is only `RUNNING` or `DONE`; a run without a report after 60 s is expired and
   answers 404. **Alternative:** more statuses (`FAILED`, `EXPIRED`). **Why:** the page needs one question
   answered, "is there a report yet", and a lost run is, to a visitor, the same as an unknown one.
+
+### HTTP load check (V2-05)
+
+- **Chosen:** a black-box client written with `java.net.http`, in the api module's test sources, that
+  knows nothing of the server's classes and reports named checks (`TOTAL_CONSERVED`,
+  `GL_ONE_ENTRY_PER_POSTING`, `RUN_ALL_SIX_INVARIANTS_PASSED` and so on), 9 for transfers and 10 for a
+  run. It also bounds its own waiting (no proxy, no redirects, a time and size cap on every answer, one
+  shared deadline for the load), so a bad server cannot hang it. It runs inside `verify` for 2 ledgers x 2 thread modes, and as a program against a server you
+  started. It works with differences from a baseline read before the load (balances, counters), so a
+  server that was already used is fine. Without `--runs-only` it refuses any host that is not loopback,
+  because the public service serves only runs (REQ-API-010) and limits them (5 per visitor per hour);
+  with `--runs-only` it sends one run and nothing else. **Alternative:** k6, Gatling or JMeter; or an
+  in-process MockMvc test. **Why:** those tools are built to measure speed, and this question is
+  "does money stay correct over real HTTP", which needs our own invariant checks on the answers; each
+  would add a tool or dependency to learn and to defend. MockMvc skips the real port, real threads and
+  real streaming, which is where the bugs of this kind live. A client of our own is small enough to read,
+  and each check has a test that damages the data and expects exactly that check to turn red. The price:
+  it is not a benchmark, and it says nothing about speed.
 
 ### PostgreSQL module and schema (V3-01)
 

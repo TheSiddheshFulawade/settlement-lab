@@ -6,11 +6,11 @@
 machine named (4-core cloud container, Intel Xeon 2.10 GHz, JDK 21.0.13). The README's Results
 section reads them and says what they show and what they do not.
 
-- **Locking beat CAS by 2.8× to 4.6×.** Most likely cause: each CAS write copies the whole 10,000-entry
+- **Locking beat CAS by 2.9x to 4.6x.** Most likely cause: each CAS write copies the whole 10,000-entry
   balance array (80 KB), and a lost swap throws the copy away. Locks touch two accounts only.
 - **Platform vs virtual: no clear throughput winner; virtual had the lower p99 in every pair** and a
   somewhat higher p50. The work is short and CPU-bound, so there is little blocking to hide.
-- **Faults cost up to about 30 % (OUTAGE, locking), not a collapse**, because GL publishing runs off
+- **The largest fault cost was 30.6 % (OUTAGE, locking on platform threads), not a collapse**, because GL publishing runs off
   the worker threads; every posting still reached the GL exactly once.
 - **Honesty rules:** one run, one machine, JDK 21 not 25; say "most likely" for causes the run did
   not isolate; never present lab numbers as production numbers.
