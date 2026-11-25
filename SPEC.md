@@ -248,7 +248,7 @@ Maven parent with two modules:
 - [x] V2-02 `POST /api/v1/transfers` with outcome mapping, idempotent replay and problem details (REQ-API-001 to 003)
 - [x] V2-03 `GET /api/v1/accounts/{id}` via `Ledger.balance`, `GET /api/v1/metrics` (REQ-API-004)
 - [x] V2-04 `GET /api/v1/events` SSE stream with bounded per-subscriber buffers (REQ-API-005)
-- [ ] V2-05 README v2 section, how to run, an HTTP load check with invariants
+- [x] V2-05 README v2 section, how to run, an HTTP load check with invariants
 - [ ] V2-06 Deploy to `api.siddheshfulawade.com` (only with the user's explicit yes). To verify there: real one-CPU Cloud Run run time (FLAKY and OUTAGE at 20,000, two runs at once; 14.1 s at most on Linux CI runners, and the report must stay within 60 s), CPU between requests, and the Cloudflare ranges
 
 # Settlement Lab · v3 spec (PostgreSQL ledger)

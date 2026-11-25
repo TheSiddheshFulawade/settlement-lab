@@ -92,6 +92,11 @@ A benchmark that varies with the runner is worse than none, because it looks lik
 mvnw.cmd -Pdb -pl ledger-postgres -am test-compile exec:java -Dexec.classpathScope=test -Dexec.mainClass=com.siddheshfulawade.settlementlab.postgres.DbResultsMain
 ```
 
+**Known broken (checked 2026-11-24).** This command fails with `ClassNotFoundException` on the parent
+module. `-am` makes `exec:java` run on the parent project first, and that happens before any Docker
+step. The fix is open, so no replacement is written here. The notes below explain what each part is
+meant to do.
+
 - `-Pdb` turns on the database profile.
 - `-pl ledger-postgres -am` builds that module and what it needs (the engine).
 - `test-compile` compiles the test sources, because `DbResultsMain` and `PostgresLedgerFactory` live there.

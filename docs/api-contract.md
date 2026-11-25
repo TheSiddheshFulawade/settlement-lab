@@ -1,7 +1,7 @@
 # Runs API contract (v2.1)
 
 For the portfolio `/lab` page. Source of truth for behaviour: SPEC.md §18 (REQ-RUN-001 to 012).
-**Status: approved 2026-11-23, amended 2026-11-24.** Base URL in production: `https://api.siddheshfulawade.com`.
+**Status: approved 2026-11-23, amended 2026-11-24 (twice; the second only documents existing behaviour).** Base URL in production: `https://api.siddheshfulawade.com`.
 
 All bodies are JSON (`application/json`), money is in plain **minor units** (`long`), times are
 milliseconds or microseconds as the field name says. Errors are RFC 9457 problem details
@@ -50,6 +50,8 @@ A `runId` matches `[A-Za-z0-9-]{1,64}`. Transfers are submitted at a steady 2,00
 
 Events have no `id:` and there is no `Last-Event-ID` replay: a reconnecting client gets the current
 metrics, or the `report` if the run is done.
+
+`HEAD` on this URL answers 405 with `Allow: GET` (for an unknown run too) and takes no subscriber place.
 
 ### `metrics` (every 250 ms while the run is active, drain included)
 
@@ -116,8 +118,9 @@ A `counterexample` is a string of at most 500 characters, or null.
 that was submitted. Connecting after the run finished sends the `report` at once. A run's report is
 kept for 10 minutes; after that the run answers 404.
 
-The report arrives within 60 s of the 202. If the stream closes without one, `GET` the run: 404 means
-it expired (the server lost its CPU or restarted).
+The report arrives within 60 s of the 202. A report that becomes ready at 60 s or later is dropped: the
+stream closes without it and `GET` answers 404, the same as for an expired run. So if the stream closes
+without a report, `GET` the run: 404 means it expired (the server lost its CPU or restarted).
 
 `GET /api/v1/runs/{runId}` returns `{"runId", "status"}` while running (`RUNNING`), or the same
 body as the `report` event once `DONE`. There are no other statuses.
