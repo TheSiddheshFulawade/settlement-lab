@@ -133,6 +133,28 @@ class SuppliedLedgerRunTest {
     }
 
     @Test
+    @DisplayName(
+            "REQ-LAB-015 a general ledger that has not caught up is named as the failure, not as a missing posting")
+    void slowGeneralLedgerIsNamedNotReportedAsMissing() {
+        var factory = new DeliveringFactory(false);
+
+        ScenarioResult row = new ScenarioRunner()
+                .run(factory, ThreadMode.PLATFORM, FaultProfile.NONE, WORKLOAD, RunnerSettings.quick());
+
+        assertThat(row.invariantsPassed()).isFalse();
+        assertThat(row.firstFailure())
+                .startsWith("general ledger did not catch up before the drain timeout")
+                .doesNotContain("missing from the general ledger");
+    }
+
+    @Test
+    @DisplayName(
+            "REQ-LAB-015 the default general-ledger drain waits 5 minutes: a FLAKY CAS cell needed 128.8 s on a laptop")
+    void defaultDrainAllowsASlowMachine() {
+        assertThat(RunnerSettings.defaults().drainTimeout()).isGreaterThanOrEqualTo(Duration.ofMinutes(5));
+    }
+
+    @Test
     @DisplayName("REQ-LAB-015 the in-memory path is unchanged: LedgerType rows keep their enum names")
     void inMemoryPathUnchanged() {
         var scenario =

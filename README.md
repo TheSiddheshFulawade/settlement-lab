@@ -379,6 +379,13 @@ ledger is v3 and stays a local and CI experiment.
 - **Chosen:** JSON written by hand. **Why:** a dozen flat fields do not justify a JSON library.
 - **Found by measuring:** the first run exposed the outbox bottleneck and GL latency on worker
   threads (see L-06). Both fixed test-first before any number was committed.
+- **Chosen (fix-03, 2026-11-26):** the general-ledger drain waits up to 5 minutes, and a row whose GL
+  has not caught up says so ("general ledger did not catch up before the drain timeout"); a ledger
+  invariant still comes first. **Alternative:** keep 2 minutes, and report the first invariant even
+  when the GL was still busy. **Why:** on a 16-core Windows laptop (JDK 25.0.1) the CAS FLAKY cells
+  failed with "posting ... is missing from the general ledger", which reads as lost money. Traced: the
+  GL needed 128.8 s to take every posting of one cell and then held all 97,161; nothing was lost. A
+  test that drains too slowly now fails on the message, and the README command passes on that laptop.
 
 ### README and committed results (L-09)
 
