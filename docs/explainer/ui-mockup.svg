@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 470" width="940" height="470" role="img" aria-labelledby="t d">
-  <title id="t">Planned Lab page on siddheshfulawade.com/lab</title>
-  <desc id="d">Mockup of the planned v2 Lab page: settings on the left (ledger, threads, faults, size, Run), live numbers and a throughput chart on the right, and the invariant checks at the bottom.</desc>
+  <title id="t">Lab page design (parked; the API is not hosted)</title>
+  <desc id="d">Mockup of the parked Lab page design: settings on the left (ledger, threads, faults, size, Run), live numbers and a throughput chart on the right, and the invariant checks at the bottom.</desc>
   <style>
     .bg{fill:#0b1220}.chrome{fill:#1a2436}.card{fill:#121c2e;stroke:#2a3a55;stroke-width:1.2}
     .h{font:600 14px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#e6edf6}

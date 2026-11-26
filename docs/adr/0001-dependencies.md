@@ -54,9 +54,9 @@ test scope. If HikariCP ever moves to compile or runtime scope, pin `slf4j-api` 
 `dependencyManagement` (and drop `slf4j-nop`'s 1.7.30 optional provider accordingly); do not loosen the rule.
 
 **PostgreSQL image:** `postgres:18.7-alpine3.24`, one constant (`PostgresTestBase.POSTGRES_IMAGE`), also
-pre-pulled in `.github/workflows/verify.yml` on Ubuntu; `ImageTagSyncTest` fails if the two differ. Update
-the major version to match the Neon project's PostgreSQL version at V2-06, so tests run on the engine
-that production runs.
+pre-pulled in `.github/workflows/verify.yml` on Ubuntu; `ImageTagSyncTest` fails if the two differ. If a
+hosted database is ever added, move the major version to match it, so tests run on the engine that
+production runs (none exists: V2-06 was dropped on 2026-11-26).
 
 **Maven profile `db`:** database tests (tag `database`) and the module's JaCoCo gate run only with `-Pdb`
 (Ubuntu CI and the laptop with Docker). Without it they are excluded, because Windows CI cannot run Linux

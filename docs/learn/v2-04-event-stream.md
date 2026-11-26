@@ -99,8 +99,8 @@ test cannot assert "closed" straight after `onOutcome`. It uses Awaitility (`:13
 
 ## Open decision: no subscriber limit yet
 
-Nothing caps how many clients may subscribe. Each costs a buffer and a virtual thread. Before deploying
-we must decide: a cap (reject with 503), per-client authentication, or both. It is a product choice, so
+Nothing caps how many clients may subscribe. Each costs a buffer and a virtual thread. Before anyone hosts it
+(nobody does: V2-06 was dropped on 2026-11-26) they must decide: a cap (reject with 503), per-client authentication, or both. It is a product choice, so
 it waits for the user (hard gate).
 
 ## TODO-ME

@@ -19,7 +19,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
 /**
- * L-6 and L-10, over a real port with the {@code prod} profile: every answer for a path the public service
+ * L-6 and L-10, over a real port with the {@code prod} profile: every answer for a path the prod profile
  * does not serve is the contract's problem detail (never Boot's error JSON or the Whitelabel page), carries the
  * CORS header for the production origin, does not echo the path, and writes no log line with the visitor's text.
  */
@@ -60,7 +60,7 @@ class ProdNotFoundHttpTest {
         "POST, /api/v1/transfers, text/html"
     })
     @DisplayName(
-            "REQ-API-010 a path the public service does not serve is the not-found problem detail, whatever Accept says")
+            "REQ-API-010 a path the prod profile does not serve is the not-found problem detail, whatever Accept says")
     void notServedPathIsAProblemDetail(String method, String path, String accept) throws Exception {
         HttpResponse<String> response = send(method, path, accept, null);
 

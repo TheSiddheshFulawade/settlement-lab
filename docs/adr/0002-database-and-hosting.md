@@ -1,6 +1,7 @@
 # ADR-0002: PostgreSQL ledger, and free hosting for the API and database
 
-- Status: accepted
+- Status: accepted; the hosting half was never carried out: the owner dropped V2-06 on 2026-11-26
+  (SPEC.md section 13). Nothing below was created: no cloud account, database, DNS record or card.
 - Date: 2026-11-21
 
 ## Context
@@ -29,7 +30,7 @@ comparable free hosting. The SQL patterns used (row locks in id order, unique co
 columns, `FOR UPDATE SKIP LOCKED` for the relay) work the same way on Oracle, which is the interview
 answer.
 
-### Hosting (decided now, deployed in v2 only with the user's explicit yes)
+### Hosting (decided 2026-11-21; dropped by the owner on 2026-11-26, never deployed)
 
 | Part                        | Where                                                                                                        | Cost               |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------ |

@@ -2,7 +2,10 @@
 
 For the portfolio `/lab` page. Source of truth for behaviour: SPEC.md §18 (REQ-RUN-001 to 012).
 **Status: approved 2026-11-23, amended 2026-11-24 (twice; the second only documents existing behaviour) and
-2026-11-25 (one more 404 problem type, `not-found`).** Base URL in production: `https://api.siddheshfulawade.com`.
+2026-11-25 (one more 404 problem type, `not-found`).** **Not hosted:** the owner dropped deployment (V2-06) on 2026-11-26, so run the API on your own machine
+(base URL `http://localhost:8080`, README "Run it locally"). The problem `type` URIs below start with
+`https://api.siddheshfulawade.com/problems/`; they are identifiers only (RFC 9457 lets a type URI not
+resolve), and nothing is served there.
 
 All bodies are JSON (`application/json`), money is in plain **minor units** (`long`), times are
 milliseconds or microseconds as the field name says. Errors are RFC 9457 problem details
@@ -107,8 +110,8 @@ data:  "glRetries":752,"breakerState":"CLOSED","outboxSize":1567}
 }
 ```
 
-Both examples are one measured run on a GitHub Actions Linux runner (4 CPUs, JDK 25, 2026-11-24); real
-one-CPU Cloud Run speed is to verify at V2-06. 1,000 accounts × 10,000 = 10,000,000 in total, and 20,000
+Both examples are one measured run on a GitHub Actions Linux runner (4 CPUs, JDK 25, 2026-11-24); the speed of
+a one-CPU host was never measured (V2-06 was dropped). 1,000 accounts × 10,000 = 10,000,000 in total, and 20,000
 transfers = 19,534 postings + 71 rejected + 395 duplicates. `durationMs` runs from the 202 to the end of
 the drain (drain included): submitting takes 10 s, then FLAKY needs about 4 s more to deliver what is
 still waiting (`outboxSize` was 5,069 at 10 s). `throughputPerSecond` = postings ÷ `durationMs`:
@@ -132,7 +135,7 @@ body as the `report` event once `DONE`. There are no other statuses.
 | ------ | ---- | ------- | --------------------- |
 | 400 | missing, unknown or out-of-range field, malformed JSON | | `invalid-run-request` |
 | 404 | unknown or expired `runId` | | `run-not-found` |
-| 404 | any path that is not part of this contract (public service) | | `not-found` |
+| 404 | any path that is not part of this contract (prod profile) | | `not-found` |
 | 413 | request body over 16 KB | | `body-too-large` |
 | 429 | this IP started 5 runs in the last hour, or a 3rd events subscriber on one run | `Retry-After` (s) | `rate-limited` |
 | 503 | 2 runs already active, or 60 runs this hour across all visitors | `Retry-After` (s) | `busy` |

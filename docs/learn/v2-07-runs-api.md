@@ -204,7 +204,7 @@ to 34.7 s and that variation is **not explained**; one local row was thrown away
 mid-run.
 
 **Decision rule.** The slowest Linux time, 14.06 s, is at most 40 s, so 20,000 stays as the limit. The
-real speed of one Cloud Run CPU is still to verify at V2-06.
+speed of one Cloud Run CPU was never measured: V2-06 was dropped on 2026-11-26.
 
 **The sample run used for the contract examples** is CI run 45345508506, Linux JDK 25: 19,534 postings
 + 71 rejected + 395 duplicates = 20,000, in 13,704 ms.
@@ -219,7 +219,7 @@ Not filled in here. (The other `TODO-ME` markers in `api/src/test` belong to V2-
 ## Interview questions
 
 1. **Why are the limits in memory, and why is that safe here?**
-   The service runs as one instance (Cloud Run max instances 1, ADR-0002), so one in-memory map sees
+   The service runs as one instance (the design assumed Cloud Run max instances 1, ADR-0002; never deployed), so one in-memory map sees
    every request and the counts are exact. A database or Redis would cost a call per visitor and a new
    moving part. With several instances each would count separately, and the 5 per hour limit would
    become 5 per hour per instance; then the limiter would have to move out. The global cap of 60 per

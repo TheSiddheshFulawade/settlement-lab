@@ -9,7 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
 /**
- * The public service serves only runs (REQ-API-010). The runs-only mode must work against it, and send
+ * The prod profile serves only runs (REQ-API-010). The runs-only mode must work against it, and send
  * exactly one run and nothing else: no transfer, account or metrics request, which prod answers 404.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "spring.profiles.active=prod")

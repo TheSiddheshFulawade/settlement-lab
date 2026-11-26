@@ -55,4 +55,4 @@ settlement:
   faults: NONE
 # Runs API (all optional; defaults in RunsProperties, which are the contract's numbers).
 #   settlement.runs.preview-origin: https://develop.portfolio-7qt.pages.dev
-#   settlement.runs.trusted-proxy-ranges: set and verified at deploy time (V2-06)
+#   settlement.runs.trusted-proxy-ranges: only behind a proxy you run and trust (none is set: not deployed, V2-06 dropped)

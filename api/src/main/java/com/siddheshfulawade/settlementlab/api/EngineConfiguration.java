@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Profile;
 /**
  * The long-lived engine behind the local endpoints (transfers, accounts, metrics, events). Not part of the
  * {@code prod} profile (REQ-API-010): nothing there uses it, and runs build their own engine each, so the
- * public service does not hold 8 idle workers and an outbox.
+ * prod profile does not hold 8 idle workers and an outbox.
  */
 @Profile("!prod")
 @Configuration(proxyBeanMethods = false)

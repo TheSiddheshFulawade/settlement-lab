@@ -28,7 +28,7 @@ public abstract class PostgresTestBase {
     /**
      * The PostgreSQL image, pinned to one exact tag. Keep it equal to the tag pre-pulled in
      * .github/workflows/verify.yml (ImageTagSyncTest checks this), and move its major version with
-     * Neon's at V2-06.
+     * a hosted database's if one is ever added (none: V2-06 was dropped).
      */
     static final String POSTGRES_IMAGE = "postgres:18.7-alpine3.24";
 

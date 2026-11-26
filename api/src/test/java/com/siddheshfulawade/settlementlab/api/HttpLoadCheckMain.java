@@ -17,7 +17,7 @@ import java.util.Set;
  *
  * Without {@code --runs-only} the target must be a loopback address: the load sends thousands of
  * transfers and is for a server you own. With {@code --runs-only} any host is allowed, and the check
- * does exactly one run and nothing else (the public service serves only runs, 5 per hour per visitor).
+ * does exactly one run and nothing else (the prod profile serves only runs, 5 per hour per visitor).
  * Exit code: 0 all checks passed, 1 a check failed or the check could not finish, 2 refused or bad
  * arguments (target, user name in the URL, or a size out of range).
  */

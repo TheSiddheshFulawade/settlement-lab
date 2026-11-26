@@ -229,9 +229,9 @@
     </p>
 
     <div class="warn">
-      <b>Scope.</b> Today <b>everything is in memory, in one process, with no
-      database.</b> That keeps the concurrency rules visible in plain Java.
-      Section 8 shows how the same rules move into PostgreSQL, the planned v3.
+      <b>Scope.</b> The engine and the API keep <b>everything in memory, in one
+      process, with no database.</b> That keeps the concurrency rules visible in plain Java.
+      Section 8 shows how the same rules move into PostgreSQL (v3, built and tested in CI).
     </div>
 
     <h3>What it is made of</h3>
@@ -271,20 +271,22 @@
         <td><span class="pill">done</span></td>
       </tr>
       <tr>
-        <td>Live stream, UI, deploy</td>
+        <td>Event stream, runs API</td>
         <td>
-          Event stream, a <code>/lab</code> page on siddheshfulawade.com, hosting at
-          <code>api.siddheshfulawade.com</code>
+          Event stream, the runs API with limits, an HTTP load check; run on your
+          own machine. Not hosted: deployment was dropped on 2026-11-26, and the
+          <code>/lab</code> page is parked
         </td>
-        <td><span class="pill a">planned v2</span></td>
+        <td><span class="pill">done, local only</span></td>
       </tr>
       <tr>
         <td>Database</td>
         <td>
-          Not used today (by design, see section 2). PostgreSQL ledger planned
-          (ADR-0002)
+          Not used by the engine or the API (by design, see section 2). A
+          PostgreSQL ledger is built and tested in CI on Linux (ADR-0002), not
+          measured yet
         </td>
-        <td><span class="pill a">planned v3</span></td>
+        <td><span class="pill">done v3, CI only</span></td>
       </tr>
     </table>
 
@@ -679,7 +681,7 @@
         <h3>Findings</h3>
         <ul>
           <li>
-            <b>Ordered locking beat CAS by 2.8× to 4.6×.</b> Each CAS write
+            <b>Ordered locking beat CAS by 2.9× to 4.6×.</b> Each CAS write
             copies an 80 KB table and throws it away on conflict; locks touch
             only two accounts.
           </li>
@@ -689,9 +691,10 @@
             is little blocking to hide.
           </li>
           <li>
-            <b>An outage cost about 30 % throughput, not a collapse.</b> The
-            breaker opened once; the outbox held ~90,000 postings and drained
-            them all.
+            <b>Faults did not collapse throughput.</b> The largest drop was
+            30.6 % (OUTAGE, locking on platform threads); CAS moved between
+            −7.7 % and +10.8 %. The breaker opened once per OUTAGE cell; the
+            outbox peaked at 86,480 to 95,181 postings and drained them all.
           </li>
         </ul>
       </div>
@@ -713,11 +716,12 @@
 
     <!-- 7 -->
     <div class="page"></div>
-    <h2>6 · The planned Lab page (v2): <code>siddheshfulawade.com/lab</code></h2>
+    <h2>6 · The Lab page design (parked, not built)</h2>
     <img class="fig" src="{{uimockup}}" alt="Lab page mockup" />
     <div class="cap">
-      Mockup with illustrative numbers. The visitor chooses a ledger, a thread
-      model and a fault mode, clicks Run, and watches the engine work and the
+      Mockup with illustrative numbers, for a page that is parked: the API it
+      would call is not hosted. The visitor would choose a ledger, a thread
+      model and a fault mode, click Run, and watch the engine work and the
       invariants turn green.
     </div>
 
@@ -726,10 +730,10 @@
     <h2>7 · What happens when someone clicks Run</h2>
     <img class="fig" src="{{uisequence}}" alt="Run sequence" />
     <div class="cap">
-      Planned v2 flow. Built today: <code>POST /api/v1/transfers</code>,
-      <code>GET /accounts/{id}</code>, <code>GET /metrics</code>; the event
-      stream is on a branch. The <code>/runs</code> endpoint is proposed and not
-      yet in SPEC.md.
+      The v2 flow, built and tested, run on your own machine (not hosted):
+      <code>POST /api/v1/runs</code>, then <code>GET /runs/{id}/events</code>
+      streams metrics and the final report, and <code>GET /runs/{id}</code>
+      returns the same report.
     </div>
     <ul>
       <li>
@@ -738,13 +742,13 @@
       </li>
       <li>
         <b>Abuse limits:</b> runs per hour per visitor, maximum size and time,
-        two runs at once. A public demo without limits is a free
+        two runs at once. Any shared server without limits is a free
         denial-of-service tool.
       </li>
       <li>
-        <b>Fallback:</b> if the free host is asleep, the page shows the
-        committed results and a short recording, so a visitor never sees an
-        error.
+        <b>Not hosted:</b> deployment was dropped on 2026-11-26, so a visitor
+        clones release v1.0.0 and runs the API locally (README, Run it
+        locally).
       </li>
     </ul>
 
@@ -794,10 +798,10 @@
       the same.
     </p>
 
-    <h3>Planned v3: a PostgreSQL ledger (ADR-0002)</h3>
+    <h3>v3: a PostgreSQL ledger (ADR-0002), built and tested in CI</h3>
     <table>
       <tr>
-        <th style="width: 34%">Add</th>
+        <th style="width: 34%">Added</th>
         <th>Why it matters</th>
       </tr>
       <tr>
