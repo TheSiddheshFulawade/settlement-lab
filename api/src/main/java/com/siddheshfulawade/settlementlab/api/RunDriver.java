@@ -114,9 +114,9 @@ final class RunDriver implements Runnable {
     }
 
     private void failed(Throwable failure) {
+        run.end(clock.instant()); // first: if logging throws, the viewers must not wait 60 s for the expiry
         // The class name only: a message could hold anything, and nothing here is about a visitor.
         LOG.warn("run {} failed: {}", run.id(), failure.getClass().getSimpleName());
-        run.end(clock.instant());
     }
 
     // ---- submitting ----------------------------------------------------------------------------------
@@ -149,7 +149,9 @@ final class RunDriver implements Runnable {
                 due = submitted + MAX_BURST;
             }
             long upTo = Math.min(total, due);
-            while (submitted < upTo) {
+            // Invariant: at most one submit follows the deadline or a stop request. A submit can block for the
+            // offer timeout when the queue is full, so a burst of 100 may not run on unchecked (10 s).
+            while (submitted < upTo && !run.stopRequested() && clock.instant().isBefore(deadline)) {
                 submit(submitted);
                 submitted++;
             }

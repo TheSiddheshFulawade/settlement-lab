@@ -5,6 +5,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import org.springframework.core.Ordered;
@@ -38,7 +39,7 @@ final class RunCorsFilter extends OncePerRequestFilter implements Ordered {
     RunCorsFilter(String previewOrigin) {
         this.allowedOrigins = previewOrigin == null || previewOrigin.isBlank()
                 ? Set.of(PRODUCTION_ORIGIN)
-                : Set.of(PRODUCTION_ORIGIN, previewOrigin.trim());
+                : Set.copyOf(List.of(PRODUCTION_ORIGIN, previewOrigin.trim())); // copyOf: the two may be equal
     }
 
     @Override
