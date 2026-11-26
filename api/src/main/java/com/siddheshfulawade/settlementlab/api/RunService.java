@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -149,6 +150,9 @@ final class RunService implements AutoCloseable {
                 closeQuietly(runtime);
             }
             admission.release();
+            if (failure instanceof RejectedExecutionException && closed.get()) {
+                throw new ServiceClosedException(); // close() stopped the sampler meanwhile: a 503, not a 500
+            }
             throw failure;
         }
     }
@@ -192,14 +196,14 @@ final class RunService implements AutoCloseable {
     }
 
     /**
-     * The timer tick. Invariant: it never throws, because a scheduled task that throws is never run again.
-     * expireAndForget is idempotent and safe beside the per-request call (end() wins once, remove is by value).
+     * The timer tick. Invariant: it lets no failure out, not even an Error, because a scheduled task that throws is
+     * never run again (and an idle service would then keep visitor addresses past the hour). expireAndForget is idempotent and safe beside the per-request call (end() wins once, remove is by value).
      */
     private void forgetSafely() {
         try {
             limits.forgetOldStarts();
             expireAndForget();
-        } catch (RuntimeException failure) {
+        } catch (Throwable failure) {
             LOG.warn("forgetting old runs failed: {}", failure.getClass().getSimpleName());
         }
     }
@@ -208,8 +212,8 @@ final class RunService implements AutoCloseable {
         return () -> {
             try {
                 run.sample();
-            } catch (RuntimeException failure) {
-                // keep sampling: one bad tick must not silence every later one
+            } catch (Throwable failure) {
+                // keep sampling: one bad tick (an Error too) must not silence every later one
                 LOG.warn(
                         "run {}: sampling failed: {}",
                         run.id(),

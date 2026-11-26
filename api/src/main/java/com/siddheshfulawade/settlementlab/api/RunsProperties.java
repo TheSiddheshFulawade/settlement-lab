@@ -4,6 +4,7 @@ import com.siddheshfulawade.settlementlab.gl.FaultProfile;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
@@ -42,8 +43,18 @@ public record RunsProperties(
         @DefaultValue("1s") Duration outageStart,
         @DefaultValue("3s") Duration outageLength) {
 
+    /**
+     * One exact origin as a browser sends it: https, lower-case host, optional non-default port, nothing after.
+     * "null", a wildcard or a list would open CORS too far; a trailing slash or capitals would never match.
+     */
+    private static final Pattern ORIGIN =
+            Pattern.compile("https://[a-z0-9-]+(\\.[a-z0-9-]+)*(:(?!443$)[1-9][0-9]{0,4})?");
+
     public RunsProperties {
         previewOrigin = previewOrigin == null ? "" : previewOrigin.trim();
+        require(
+                previewOrigin.isEmpty() || ORIGIN.matcher(previewOrigin).matches(),
+                "preview-origin must be empty or one exact https origin");
         trustedProxyRanges = trustedProxyRanges == null ? List.of() : List.copyOf(trustedProxyRanges);
         Objects.requireNonNull(deadline, "deadline");
         Objects.requireNonNull(retention, "retention");

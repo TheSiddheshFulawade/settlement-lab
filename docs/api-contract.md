@@ -1,7 +1,8 @@
 # Runs API contract (v2.1)
 
 For the portfolio `/lab` page. Source of truth for behaviour: SPEC.md §18 (REQ-RUN-001 to 012).
-**Status: approved 2026-11-23, amended 2026-11-24 (twice; the second only documents existing behaviour).** Base URL in production: `https://api.siddheshfulawade.com`.
+**Status: approved 2026-11-23, amended 2026-11-24 (twice; the second only documents existing behaviour) and
+2026-11-25 (one more 404 problem type, `not-found`).** Base URL in production: `https://api.siddheshfulawade.com`.
 
 All bodies are JSON (`application/json`), money is in plain **minor units** (`long`), times are
 milliseconds or microseconds as the field name says. Errors are RFC 9457 problem details
@@ -131,6 +132,7 @@ body as the `report` event once `DONE`. There are no other statuses.
 | ------ | ---- | ------- | --------------------- |
 | 400 | missing, unknown or out-of-range field, malformed JSON | | `invalid-run-request` |
 | 404 | unknown or expired `runId` | | `run-not-found` |
+| 404 | any path that is not part of this contract (public service) | | `not-found` |
 | 413 | request body over 16 KB | | `body-too-large` |
 | 429 | this IP started 5 runs in the last hour, or a 3rd events subscriber on one run | `Retry-After` (s) | `rate-limited` |
 | 503 | 2 runs already active, or 60 runs this hour across all visitors | `Retry-After` (s) | `busy` |

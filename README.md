@@ -456,6 +456,30 @@ ledger is v3 and stays a local and CI experiment.
   and each check has a test that damages the data and expects exactly that check to turn red. The price:
   it is not a benchmark, and it says nothing about speed.
 
+### Hardening before the deploy (fix-02)
+
+- **Chosen:** inside a burst the run driver checks the deadline and the stop flag before every submit.
+  **Alternative:** a smaller burst. **Why:** a submit can block 100 ms on a full queue, so a burst of 100
+  could run 10 s past the deadline; now at most the one submit in flight follows it.
+- **Chosen:** the production allow-list matches the three run paths exactly (`/runs`, `/runs/{id}`,
+  `/runs/{id}/events`) and answers anything else with a fixed `not-found` problem. **Alternative:** a path
+  prefix and the framework's error page. **Why:** nothing the visitor typed is echoed or logged, and the
+  answer does not depend on `Accept`. Requests that Tomcat or Spring refuses itself (a malformed line, `TRACE`,
+  an unsupported method) still get their own error body.
+- **Chosen:** multipart parsing is off. **Alternative:** Boot's default, which is on. **Why:** nothing here
+  takes uploads, and it parsed a multipart body on any method into temporary files, past the 16 KB cap that
+  skips GET and OPTIONS. On Cloud Run those files are memory.
+- **Chosen:** `server.forward-headers-strategy: none`, pinned. **Alternative:** Boot's default. **Why:** the
+  default changes on a detected cloud platform: Tomcat would then consume the last `X-Forwarded-For` entry
+  and leave a forged one for the per-visitor limit.
+- **Chosen:** a 5 s Tomcat connection timeout (per read) and an explicit 60 s keep-alive.
+  **Alternative:** the 60 s default, or a deadline loop in the body filter. **Why:** with two lines of
+  configuration a stalled body is answered after 5 s and its connection closed after about 10 s. It does not stop a slow drip (one byte every
+  4 s); that is measured at V2-06.
+- **Chosen:** the timer ticks catch `Throwable`. **Alternative:** `RuntimeException` only. **Why:** a
+  scheduled task that throws is never run again, so one `Error` would keep visitor addresses past the hour.
+  An `OutOfMemoryError` must still end the process: V2-06 adds `-XX:+ExitOnOutOfMemoryError`.
+
 ### PostgreSQL module and schema (V3-01)
 
 - **Chosen:** a separate `ledger-postgres` module that depends on `engine`, using plain JDBC.
