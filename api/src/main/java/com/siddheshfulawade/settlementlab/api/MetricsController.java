@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** {@code GET /api/v1/metrics} (REQ-API-004): what the runner's table shows, live. */
-@Profile("!prod") // REQ-API-010: the public service serves only the runs API and health
+@Profile("!prod") // REQ-API-010: the prod profile serves only the runs API and health
 @RestController
 @RequestMapping("/api/v1/metrics")
 class MetricsController {

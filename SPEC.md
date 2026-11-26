@@ -3,7 +3,7 @@
 Spec for the separate public repo `settlement-lab` (local path `D:\Siddhesh\settlement-lab`).
 Decided by ADR-0004 in the portfolio repo. A separate Claude session builds it from this file.
 v1 is a plain Java library plus a command-line runner. v2 wraps it in a Spring Boot API
-(`api.siddheshfulawade.com`), so **the engine never imports Spring**.
+(built and tested, run locally only; V2-06 hosting was dropped on 2026-11-26), so **the engine never imports Spring**.
 
 ## 0. Rules that carry over from the portfolio
 
@@ -203,9 +203,9 @@ In: a Spring Boot API module that wraps `SettlementEngine`: submit a transfer, r
 metrics, and a server-sent event (SSE) stream of outcomes · configuration of ledger, thread mode,
 sizes and fault profile · graceful shutdown · API tests (MockMvc and over real HTTP) · README.
 
-Out (v3 or later): persistence and a database outbox, authentication, the UI, Docker. **Deploying to
-`api.siddheshfulawade.com` needs the user's explicit yes** (cloud resources and money, CLAUDE.md), so
-it is listed (V2-06) but not done without it.
+Out (v3 or later): persistence and a database outbox, authentication, the UI, Docker. Deploying was
+V2-06, which needed the user's explicit yes (cloud resources and money, CLAUDE.md); the user dropped it
+on 2026-11-26 (section 13), so the API is not hosted anywhere.
 
 ## 11. Requirements (EARS)
 
@@ -249,14 +249,14 @@ Maven parent with two modules:
 - [x] V2-03 `GET /api/v1/accounts/{id}` via `Ledger.balance`, `GET /api/v1/metrics` (REQ-API-004)
 - [x] V2-04 `GET /api/v1/events` SSE stream with bounded per-subscriber buffers (REQ-API-005)
 - [x] V2-05 README v2 section, how to run, an HTTP load check with invariants
-- [ ] V2-06 Deploy to `api.siddheshfulawade.com` (only with the user's explicit yes). To verify there: real one-CPU Cloud Run run time (FLAKY and OUTAGE at 20,000, two runs at once; 14.1 s at most on Linux CI runners, and the report must stay within 60 s), CPU between requests, `-XX:+ExitOnOutOfMemoryError` set, and the Cloudflare ranges
+- [-] V2-06 Deploy to a public host. **Dropped by the user, 2026-11-26: no hosting; v1.0.0 runs locally.** Why (the user's reasons, as given on 2026-11-26; not re-checked against Google's pages in this repo): Cloud Run needs a billing account with a payment card and has no hard spending cap, its free egress covers traffic from North America only, and custom domain mapping is a Preview feature; before 1 Dec 2026 the time and plan limit were worth more than a hosted demo. No cloud account, card, DNS record or cloud resource was created. The API stays built, tested and hardened, and a visitor runs it on their own machine (README, Run it locally). Never verified because of this: one-CPU Cloud Run run time (FLAKY and OUTAGE at 20,000, two runs at once; 14.1 s at most on Linux CI runners, and the report must stay within 60 s), CPU between requests, `-XX:+ExitOnOutOfMemoryError`, and trusted proxy ranges
 
 # Settlement Lab · v3 spec (PostgreSQL ledger)
 
 Written 2026-11-21, per ADR-0002. Same rules as section 0. The engine module stays framework-free
 and database-free: PostgreSQL lives in a new module behind the existing `Ledger` port. The user
-lifted the feature pause for v3 on 2026-11-21 and for v2 on 2026-11-23 (live demo by 1 Dec 2026):
-v3 tasks run first, back to back, then V2-04 to V2-06. Each task ends with its own PR, merged by `git-ops` on green CI.
+lifted the feature pause for v3 on 2026-11-21 and for v2 on 2026-11-23 (then aiming at a live demo by 1 Dec 2026; hosting was dropped on 2026-11-26):
+v3 tasks run first, back to back, then V2-04 to V2-06 (V2-06 later dropped). Each task ends with its own PR, merged by `git-ops` on green CI.
 
 ## 14. Scope (v3)
 
@@ -266,8 +266,8 @@ several engine instances · a transactional outbox table and a relay · Flyway m
 property and stress suites as the in-memory ledgers, run against a real PostgreSQL with
 Testcontainers · runner cells for both modes · README Decisions and learn notes.
 
-Out: wiring into the `api` module and deploying to Neon/Cloud Run (that is V2-06 work, with the
-user's explicit yes), multi-region, sharding, Oracle (ADR-0002 explains why; the learn notes give
+Out: wiring into the `api` module and any hosted database (V2-06, dropped by the user on
+2026-11-26), multi-region, sharding, Oracle (ADR-0002 explains why; the learn notes give
 the Oracle equivalents).
 
 ## 15. Requirements (EARS)
@@ -396,7 +396,7 @@ equivalents, then `/ship` (`git-ops` merges on the required green CI checks).
 
 Written 2026-11-23 for the portfolio `/lab` page (`docs/explainer/ui-mockup.svg`,
 `docs/explainer/ui-sequence.svg`); the wire format is in `docs/api-contract.md`. Same rules as
-section 0. Deadline: live demo by 1 Dec 2026. **Status: approved 2026-11-23, amended 2026-11-24 (owner-approved).**
+section 0. Deadline was a live demo by 1 Dec 2026; hosting was dropped on 2026-11-26, so the API runs locally only and the `/lab` page is parked. **Status: approved 2026-11-23, amended 2026-11-24 (owner-approved).**
 
 ## 18. Runs API
 
@@ -482,12 +482,12 @@ runs (v3 stays a local and CI experiment), custom workloads beyond the fields be
   every 250 ms and pushes one `metrics` event per subscriber through a bounded buffer (the V2-04 per-subscriber buffer, reused); a full buffer drops the oldest `metrics` event,
   never the `report`.
 - Limits: a per-IP sliding window (5 per hour) and a global window (60 per hour), plus a semaphore of
-  2 active runs, all in memory. One instance only (Cloud Run max instances 1, ADR-0002), so in-memory
+  2 active runs, all in memory. One instance only (the design assumed Cloud Run max instances 1, ADR-0002; never deployed), so in-memory
   limits are exact. The client IP is never a client-supplied first `X-Forwarded-For` entry
-  (REQ-RUN-006). The trusted proxy ranges (Cloudflare's) are set and verified at V2-06, with how the
-  instance's CPU behaves between requests. The global cap bounds cost even if the per-IP key were
-  spoofed. `GET` and health stay outside Cloudflare's rate rule.
-- Cost bound: 2 runs × 20 s × 8 workers on one 512 MiB instance; the existing transfer, account,
+  (REQ-RUN-006). Trusted proxy ranges would be set and verified at deploy time, with how the
+  instance's CPU behaves between requests; V2-06 was dropped, so none are set. The global cap bounds cost even if the per-IP key were
+  spoofed. `GET` and health would have stayed outside Cloudflare's rate rule (never deployed).
+- Cost bound (designed for the dropped V2-06 host, never deployed): 2 runs × 20 s × 8 workers on one 512 MiB instance; the existing transfer, account,
   metrics and events endpoints stay for local use.
 - Engine module unchanged except, if needed, a read-only accessor for retry and breaker counts
   (no Spring in the engine).
@@ -496,6 +496,6 @@ runs (v3 stays a local and CI experiment), custom workloads beyond the fields be
 
 Order: V2-04 (section 13; its bounded per-subscriber buffer is the building block for run events;
 reuse `feature/day-7` by merging `origin/main` into it) → V2-07 below → V2-05 (README v2 and an HTTP
-load check that includes a run) → V2-06 (deploy, only with the user's yes).
+load check that includes a run) → V2-06 (deploy; dropped by the user on 2026-11-26).
 
 - [x] V2-07 Runs API: request validation, run registry, 20 s deadline, metrics sampler, `report`, limits (429/503 + `Retry-After`), CORS, report retention; `docs/api-contract.md` kept in sync (REQ-RUN-001 to 012)

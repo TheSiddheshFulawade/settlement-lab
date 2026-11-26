@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code POST /api/v1/transfers} (REQ-API-001 to 003). Returns a future, so no request thread
  * waits for the engine; Spring completes the response when the outcome arrives.
  */
-@Profile("!prod") // REQ-API-010: the public service serves only the runs API and health
+@Profile("!prod") // REQ-API-010: the prod profile serves only the runs API and health
 @RestController
 @RequestMapping("/api/v1/transfers")
 class TransferController {

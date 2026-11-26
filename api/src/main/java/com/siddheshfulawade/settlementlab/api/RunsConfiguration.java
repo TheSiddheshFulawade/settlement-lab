@@ -49,7 +49,7 @@ class RunsConfiguration {
         return new BodyLimitFilter();
     }
 
-    /** The public service answers 404 for everything but the runs API and health (REQ-API-010). */
+    /** The prod profile answers 404 for everything but the runs API and health (REQ-API-010). */
     @Bean
     @Profile("prod")
     ProdAllowListFilter prodAllowListFilter() {

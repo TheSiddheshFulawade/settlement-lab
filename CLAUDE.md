@@ -2,8 +2,8 @@
 
 A concurrency-safe settlement engine: move money between accounts concurrently without ever creating
 or losing any, under duplicates, downstream failures and overload. Then measure locking and
-threading choices. v1 is a plain Java library with a runner; v2 wraps it in a Spring Boot API at
-`api.siddheshfulawade.com`. Write-up: https://siddheshfulawade.com/projects/settlement-lab
+threading choices. v1 is a plain Java library with a runner; v2 wraps it in a Spring Boot API, run
+locally only (V2-06 hosting dropped by the user on 2026-11-26; "live" = GitHub release v1.0.0). Write-up: https://siddheshfulawade.com/projects/settlement-lab
 
 **SPEC.md is the source of truth** (requirements, design, tasks). Read it before any work.
 
@@ -65,15 +65,15 @@ architecture rules. Run the results with the runner described in SPEC.md §4.6.
   - `test-engineer`: failing tests first, for every task.
   - `java-engineer`: makes them pass (engine and api).
   - `database-engineer`: PostgreSQL schema, SQL, locking and outbox (ADR-0002).
-  - `deploy-engineer`: container and Cloud Run/Neon setup; never deploys or spends without a yes.
-  - `security-auditor`: before any deploy and after changes to `api`, pom files or CI.
+  - `deploy-engineer`: retired 2026-11-26 with V2-06 (no hosting); not used unless the user lifts that.
+  - `security-auditor`: after changes to `api`, pom files or CI.
   - `tutor`: `docs/learn` notes, plain explanations, interview answers, TODO-ME reviews.
   - `git-ops`: branch, commit, push, PR, wait for the required checks, squash-merge on green.
 - Typical task: `test-engineer` → `java-engineer` (or `database-engineer`) → `mvnw verify` (plus
   `-Pdb` for database work) → `security-auditor` for `api`, pom or CI changes → `tutor` writes the
   learn note and README Decisions entry → `/ship` (git-ops) → handoff line → next task.
-- Database and hosting are decided in `docs/adr/0002-database-and-hosting.md`: PostgreSQL (Neon) and
-  Cloud Run, both in Singapore, free tiers only.
+- Database and hosting were decided in `docs/adr/0002-database-and-hosting.md`; the hosting half
+  (Cloud Run, Neon) was dropped by the user on 2026-11-26. Do not prepare or propose a deploy.
 
 ## Handoffs
 

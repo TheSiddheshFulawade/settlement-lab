@@ -5,8 +5,8 @@ or losing any, under duplicates, downstream failures and overload. Then measure 
 choices. Write-up: https://siddheshfulawade.com/projects/settlement-lab
 
 v1 is a plain Java library and a command-line runner (module `engine`). v2 wraps it in a Spring Boot
-HTTP API (module `api`): it is built and tested, and not deployed yet (V2-06 waits for the owner's
-yes). The engine still never imports Spring. v3 adds a PostgreSQL ledger (module `ledger-postgres`),
+HTTP API (module `api`): it is built, tested and hardened, and runs on your own machine only. It is
+not hosted anywhere: the owner dropped deployment (V2-06) on 2026-11-26. The engine still never imports Spring. v3 adds a PostgreSQL ledger (module `ledger-postgres`),
 tested in CI on Linux, not wired into the API, and not measured yet (see Database results).
 [SPEC.md](SPEC.md) has the requirements (REQ-LAB-001 to 016, REQ-API-001 to 010, REQ-RUN-001 to 013),
 the design and the task lists. The HTTP contract of the runs API is in
@@ -69,8 +69,8 @@ submit(transfer)
 - **Back-pressure.** An `ArrayBlockingQueue` and `offer(timeout)`: a caller waits at most 100 ms, then
   hears `QUEUE_FULL` and may retry with the same id.
 - **Resilience.** The ledger posting is the source of truth; the GL is eventually consistent. Retry
-  absorbs blips, the circuit breaker fails fast during outages, the outbox never loses a posting,
-  and the GL is keyed by transfer id, so a resend is harmless: exactly-once effect.
+  absorbs blips, the circuit breaker fails fast during outages, the outbox keeps every posting until the GL takes it
+  (in memory in v1, so only while the process runs; the v3 PostgreSQL outbox survives a restart), and the GL is keyed by transfer id, so a resend is harmless: exactly-once effect.
 - **Proof.** jqwik properties (including agreement with a sequential model) and stress tests run
   against both ledgers; every runner cell ends with `InvariantChecker`. Study notes for each module
   are in [docs/learn](docs/learn).
@@ -113,7 +113,7 @@ What the numbers say (and what they do not):
   (248,861 vs 181,706/s); in the other five pairs the faster mode led by 2.7 % to 10.2 %. The
   work is short and CPU-bound, so virtual threads have little blocking to hide. **Virtual threads
   had the lower p99 in all six pairs** (for example 800 vs 2,008 µs), with a higher p50 in all six
-  (by 15 % to 86 %).
+  (by 14.7 % to 85.8 %).
   One run on 4 cores: the direction is worth a repeat run, the exact ratios are not to be trusted.
 - **Faults did not collapse throughput**: against the NONE cell with the same ledger and threads, the
   largest drops were 30.6 % (OUTAGE) and 13.3 % (FLAKY), both for locking on platform threads. Locking
@@ -142,27 +142,47 @@ mvnw.cmd -Pdb -pl ledger-postgres -am test-compile exec:java -Dexec.classpathSco
 parent module: `-am` makes `exec:java` run on the parent project first, before any Docker step. The fix
 is open, so no working command is printed here yet.
 
-## How to run
+## Run it locally
+
+Nothing is hosted: you clone the repository (or release v1.0.0) and run everything on your own machine.
+Needs JDK 21 or newer (25 recommended) Git, and `curl` for steps 4 and 5 (it ships with Git
+for Windows and with Windows 10 and later); nothing else. On Windows, run them in
+Git Bash (`./mvnw` works there; `mvnw.cmd` too). Every command below was run on 2026-11-26 on a 16-core
+AMD laptop, Windows 11, JDK 25.0.1, unless it says "proved in CI".
+
+**1. The tests (the single gate).** Compile, all tests, 85 % line coverage, format and architecture rules:
 
 ```bash
 ./mvnw verify
 ```
 
-On Windows: `mvnw.cmd verify`. Needs JDK 21 or newer (25 recommended). `./mvnw spotless:apply`
-fixes formatting. `verify` is the single gate: compile, tests, 85 % line coverage, format and
-architecture rules.
+Proved in CI on every pull request and every push to main: Ubuntu and Windows × JDK 21 and 25, for
+example [run 45872859770](https://github.com/TheSiddheshFulawade/settlement-lab/actions/runs/45872859770)
+(the fix-03 pull request).
+On the laptop only the engine module was run (`./mvnw -pl engine verify`: 181 tests, coverage met).
+The database tests need Docker and run with `-Pdb` on Linux CI only (Ubuntu runs `./mvnw verify -Pdb`).
+`./mvnw spotless:apply` fixes formatting (on the laptop only `./mvnw spotless:check` was run: it
+passed).
 
-Run the scenario matrix (writes `results/results.json` and `results/results.md`; exits 1 if any
-invariant fails):
+**2. The scenario matrix** (12 cells; exits 1 if any cell fails: an invariant, or the general
+ledger not catching up within 5 minutes). Without `--out` it overwrites
+the committed `results/`, so write elsewhere:
 
 ```bash
-./mvnw -q -pl engine compile exec:java -Dexec.args="--transfers 100000"
+./mvnw -q -pl engine compile exec:java -Dexec.args="--transfers 100000 --out my-results"
 ```
+
+On the laptop: all 12 cells `PASS`, exit 0, 524 s in all. Much of that is likely the general ledger catching up
+after the transfers (one traced CAS FLAKY cell took 128.8 s to drain; the split of the 524 s was not
+measured; fix-03 below). These laptop numbers are a check that the
+command works, not the committed results: those are in the Results section, from one run on a 4-core
+container.
 
 Options: `--accounts`, `--transfers`, `--hot-accounts`, `--hot-percent`, `--duplicate-percent`,
 `--seed`, `--out`.
 
-Start the HTTP API (settings under `settlement.*`, see `api/src/main/resources/application.yml`):
+**3. The HTTP API** (settings under `settlement.*`, see `api/src/main/resources/application.yml`). Build
+it, then start it; it listens on Spring Boot's default port, `http://localhost:8080`:
 
 ```bash
 ./mvnw -q -pl api -am package -DskipTests
@@ -172,12 +192,30 @@ Start the HTTP API (settings under `settlement.*`, see `api/src/main/resources/a
 java -jar api/target/settlement-lab-api-0.1.0-SNAPSHOT.jar --settlement.ledger=CAS --settlement.faults=FLAKY
 ```
 
-`application.yml` sets no `server.port`, so the API listens on Spring Boot's default, 8080
-(`http://localhost:8080`).
+**4. One run over HTTP with curl.** Start a run (answer: `202` with a `runId`), then read its report:
+
+```bash
+curl -s -i -X POST http://localhost:8080/api/v1/runs -H "Content-Type: application/json"   -d '{"ledger":"LOCKING","threads":"VIRTUAL","faults":"FLAKY","transfers":2000,"duplicatePercent":2}'
+```
+
+```bash
+curl -s http://localhost:8080/api/v1/runs/<runId>
+```
+
+On the laptop: `202 Accepted`, then `"status":"DONE"`, 2,000 of 2,000 transfers in 1,652 ms, opening and
+closing total 10,000,000, 39 duplicates sent and 0 applied, and all six invariants `"passed":true`
+(`"allPassed":true`). To watch it live instead, `curl -N -H "Accept: text/event-stream"
+http://localhost:8080/api/v1/runs/<runId>/events` streams `metrics` events and ends with the `report`
+(a 2,000-transfer run is over in about 2 s, so start it straight after the POST). That `curl -N` form
+was not run on the laptop; the load check in step 5 reads the same stream and passed
+`RUN_ONE_REPORT_AND_IT_IS_LAST`.
+
+For a server you keep running, add `-XX:+ExitOnOutOfMemoryError` after `java` (fix-02 Decisions); the
+laptop run above did not use it.
 
 ### The HTTP load check
 
-With the API running, a black-box client can check it from the outside. The class is
+**5.** With the API running, a black-box client can check it from the outside. The class is
 `HttpLoadCheckMain`, in the api module's test sources, so it needs the test classpath. Two steps, both
 run in Git Bash on Windows. First write the classpath to a file (the path **must be absolute**, and on
 Windows in `D:/...` form):
@@ -203,7 +241,7 @@ classpath. That form has not been tried yet. No `cmd.exe` or PowerShell form is 
   loopback (`localhost`, `127.x.x.x`, `::1`; names are checked as text, with no DNS lookup), because it
   sends thousands of transfers and is for a server you own.
 - **`--runs-only`** does exactly one run and nothing else: no transfer, account or metrics request. Any
-  host is allowed. Use it for a server that serves only runs, such as the public one will (REQ-API-010).
+  host is allowed. Use it for a server that serves only runs, such as one started with the `prod` profile (REQ-API-010).
 - **Exit codes:** 0 every check passed, 1 a check failed (or the check could not finish), 2 refused or
   bad arguments.
 
@@ -222,19 +260,21 @@ would be worse. Three deliberate bugs in the engine turned the matching checks r
 What it does not prove: it is a correctness check, **not a benchmark**. It makes no throughput claim, and
 a pass says nothing about speed. One real run against a local jar, on the laptop: 1,500 transfers decided
 (2,175 transfer POSTs, 4,181 requests in all), 1,283 posted, 675 repeats answered with the original
-status, total money 10,000,000 before and after, all 19 checks `PASS`.
+status, total money 10,000,000 before and after, all 19 checks `PASS`. Run again on 2026-11-26 (JDK 25.0.1,
+the two commands above): all 19 `PASS`, `RESULT PASS`, exit 0, 4,186 requests in 7.7 s.
 
 ## What v2 adds
 
 A Spring Boot API (module `api`) that wraps `SettlementEngine` and keeps the engine framework-free. It
-is built, and not deployed: `api.siddheshfulawade.com` is V2-06 and waits for the owner's explicit yes.
+is built, tested and run locally, and **not deployed**: the owner dropped V2-06 (hosting) on 2026-11-26.
+The `prod` profile and its allow-list stay in the code and its tests, but nothing runs them on a server.
 
 - `POST /api/v1/transfers`, with idempotent replay and RFC 9457 problem details (REQ-API-001 to 003,
   REQ-API-009).
 - `GET /api/v1/accounts/{id}` and `GET /api/v1/metrics` (REQ-API-004).
 - `GET /api/v1/events`, a server-sent event stream of outcomes with a bounded buffer per subscriber
   (REQ-API-005).
-- The runs API for the portfolio page: start a run, watch live metrics, read the invariant report, with
+- The runs API (designed for a portfolio page that is parked): start a run, watch live metrics, read the invariant report, with
   limits and CORS (REQ-RUN-001 to 013; contract in [docs/api-contract.md](docs/api-contract.md)).
   In the `prod` profile only the runs and `/actuator/health` are served (REQ-API-010).
 - Graceful shutdown (REQ-API-006), and the black-box HTTP load check above.
@@ -391,7 +431,7 @@ ledger is v3 and stays a local and CI experiment.
   with the snapshot) and a stress test (no negative or impossible value mid-run).
 - **Chosen:** `GET /api/v1/metrics` returns the runner's columns live (engine, outbox, breaker,
   general ledger) plus the settings. **Alternative:** Spring Boot Actuator and Micrometer.
-  **Why:** no extra dependency for a handful of numbers; Actuator can come with deployment (V2-06).
+  **Why:** no extra dependency for a handful of numbers; Actuator serves only `/actuator/health`.
 
 ### Event stream (V2-04)
 
@@ -417,7 +457,7 @@ ledger is v3 and stays a local and CI experiment.
   visitor and adds no moving part. Several instances would each count alone, and the limiter would have to
   move out then. The global cap bounds cost even if a visitor key were forged.
 - **Chosen:** the driver submits at a paced 2,000 transfers/s (catch-up after a stall capped at 100) and
-  reports that paced rate. **Alternative:** submit as fast as the engine goes. **Why:** a public demo must
+  reports that paced rate. **Alternative:** submit as fast as the engine goes. **Why:** a server shared by visitors must
   cost a bounded, predictable amount of CPU, and a visitor can follow a steady stream; engine capacity is
   measured separately, in the benchmarks above. The price: a 20,000 run takes about 14 s on Linux CI runners.
 - **Chosen:** a new in-memory engine per run, closed when the report is sent, and a finished run keeps
@@ -447,7 +487,7 @@ ledger is v3 and stays a local and CI experiment.
   shared deadline for the load), so a bad server cannot hang it. It runs inside `verify` for 2 ledgers x 2 thread modes, and as a program against a server you
   started. It works with differences from a baseline read before the load (balances, counters), so a
   server that was already used is fine. Without `--runs-only` it refuses any host that is not loopback,
-  because the public service serves only runs (REQ-API-010) and limits them (5 per visitor per hour);
+  because a `prod`-profile server serves only runs (REQ-API-010) and limits them (5 per visitor per hour);
   with `--runs-only` it sends one run and nothing else. **Alternative:** k6, Gatling or JMeter; or an
   in-process MockMvc test. **Why:** those tools are built to measure speed, and this question is
   "does money stay correct over real HTTP", which needs our own invariant checks on the answers; each
@@ -456,7 +496,7 @@ ledger is v3 and stays a local and CI experiment.
   and each check has a test that damages the data and expects exactly that check to turn red. The price:
   it is not a benchmark, and it says nothing about speed.
 
-### Hardening before the deploy (fix-02)
+### Hardening the runs API (fix-02)
 
 - **Chosen:** inside a burst the run driver checks the deadline and the stop flag before every submit.
   **Alternative:** a smaller burst. **Why:** a submit can block 100 ms on a full queue, so a burst of 100
@@ -468,17 +508,17 @@ ledger is v3 and stays a local and CI experiment.
   an unsupported method) still get their own error body.
 - **Chosen:** multipart parsing is off. **Alternative:** Boot's default, which is on. **Why:** nothing here
   takes uploads, and it parsed a multipart body on any method into temporary files, past the 16 KB cap that
-  skips GET and OPTIONS. On Cloud Run those files are memory.
+  skips GET and OPTIONS. On a container host such as Cloud Run those files would be memory.
 - **Chosen:** `server.forward-headers-strategy: none`, pinned. **Alternative:** Boot's default. **Why:** the
   default changes on a detected cloud platform: Tomcat would then consume the last `X-Forwarded-For` entry
   and leave a forged one for the per-visitor limit.
 - **Chosen:** a 5 s Tomcat connection timeout (per read) and an explicit 60 s keep-alive.
   **Alternative:** the 60 s default, or a deadline loop in the body filter. **Why:** with two lines of
   configuration a stalled body is answered after 5 s and its connection closed after about 10 s. It does not stop a slow drip (one byte every
-  4 s); that is measured at V2-06.
+  4 s); measuring it was V2-06 work, dropped with the deploy.
 - **Chosen:** the timer ticks catch `Throwable`. **Alternative:** `RuntimeException` only. **Why:** a
   scheduled task that throws is never run again, so one `Error` would keep visitor addresses past the hour.
-  An `OutOfMemoryError` must still end the process: V2-06 adds `-XX:+ExitOnOutOfMemoryError`.
+  An `OutOfMemoryError` must still end the process: run the jar with `-XX:+ExitOnOutOfMemoryError`.
 
 ### PostgreSQL module and schema (V3-01)
 

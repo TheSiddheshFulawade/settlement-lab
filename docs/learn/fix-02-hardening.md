@@ -1,7 +1,7 @@
-# fix-02 · Hardening before the deploy
+# fix-02 · Hardening the runs API
 
 Nine findings from the security audits of V2-05 and V2-07, and two more (H-1, M-1) that the re-check of
-this change found, fixed before anything is public. Each has a test that failed first, except the stalled-body test (N-3): it passes before and after because it sets its
+this change found, fixed before the release (the API was never made public: V2-06 was dropped on 2026-11-26). Each has a test that failed first, except the stalled-body test (N-3): it passes before and after because it sets its
 own short timeout, so it guards the behaviour, and `TomcatTimeoutsTest` is the one that failed.
 
 | Finding | What could happen | Fix |

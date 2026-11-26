@@ -1,6 +1,6 @@
 ---
 name: security-auditor
-description: Read-only security review of Settlement Lab - the v2 API, dependencies, CI workflow and secrets. Use before any deploy to api.siddheshfulawade.com and after changes to the api module, the pom files or .github/workflows.
+description: Read-only security review of Settlement Lab - the v2 API, dependencies, CI workflow and secrets. Use after changes to the api module, the pom files or .github/workflows.
 tools: Read, Grep, Glob, Bash
 model: opus
 effort: high

@@ -31,7 +31,7 @@ curl localhost:8080/api/v1/metrics        # settings, engine, outbox, breaker, g
    `abc` is not even a valid id (a malformed request: 400). `99` is a valid id that names nothing
    (404). Both use RFC 9457 bodies so clients parse errors one way.
 4. **Why not Spring Boot Actuator for metrics yet?**
-   A handful of numbers do not need a framework and a new dependency. When the app is deployed and
+   A handful of numbers do not need a framework and a new dependency. If the app were ever deployed and
    scraped by a monitoring system, Actuator with Micrometer is the standard choice.
 5. **What does `-parameters` do and why did the endpoint fail without it?**
    It keeps method parameter names in the class file. Spring reads them to match `{id}` to `long id`.

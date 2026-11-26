@@ -15,7 +15,7 @@ final class HttpLoadCheck {
     /**
      * @param operations distinct transfer ids to send (about 1.4x that many requests with the copies and repeats)
      * @param clients virtual-thread clients sending at the same time
-     * @param withTransfers send the transfer mix (needs the local endpoints; the public service has none)
+     * @param withTransfers send the transfer mix (needs the local endpoints; the prod profile has none)
      * @param withRun start one run
      */
     record Options(

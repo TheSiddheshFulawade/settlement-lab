@@ -228,7 +228,7 @@ yourself which engine line would make the 99 apply, and why your test would catc
 
 5. **Why does the check refuse non-loopback hosts, and why is it not a benchmark?**
    The load sends thousands of transfers. Pointed at a server you do not own, that is an attack, and the
-   public service serves only runs and limits them (REQ-API-010, REQ-RUN-006). So the default needs a
+   prod profile serves only runs and limits them (REQ-API-010, REQ-RUN-006). So the default needs a
    loopback address, matched as literal text with no DNS lookup, and `--runs-only` sends one run and
    nothing else. It is not a benchmark because it measures nothing about speed: the clients are
    closed-loop, the mix includes waits for `Retry-After`, and it ends with a bounded poll. A pass means
