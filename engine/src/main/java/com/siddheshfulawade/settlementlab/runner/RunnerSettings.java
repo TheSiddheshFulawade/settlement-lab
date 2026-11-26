@@ -27,7 +27,9 @@ public record RunnerSettings(
                 Duration.ofMillis(100),
                 ResilienceConfig.defaults(),
                 Duration.ofMillis(20),
-                Duration.ofMinutes(2));
+                // 5 min, not 2: on a 16-core Windows laptop (JDK 25) the general ledger needed 128.8 s to
+                // take every posting of one FLAKY CAS cell, so 2 min failed a run that lost nothing.
+                Duration.ofMinutes(5));
     }
 
     /** Small waits, for tests. */

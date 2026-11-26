@@ -1,6 +1,7 @@
 package com.siddheshfulawade.settlementlab.runner;
 
 import com.siddheshfulawade.settlementlab.domain.AccountId;
+import com.siddheshfulawade.settlementlab.domain.Invariant;
 import com.siddheshfulawade.settlementlab.domain.InvariantChecker;
 import com.siddheshfulawade.settlementlab.domain.InvariantReport;
 import com.siddheshfulawade.settlementlab.domain.InvariantResult;
@@ -19,6 +20,7 @@ import com.siddheshfulawade.settlementlab.pipeline.SettlementEngine;
 import com.siddheshfulawade.settlementlab.pipeline.SettlementListener;
 import com.siddheshfulawade.settlementlab.pipeline.ThreadMode;
 import com.siddheshfulawade.settlementlab.resilience.ResilientPublisher;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -90,9 +92,7 @@ public final class ScenarioRunner {
             InvariantReport report =
                     InvariantChecker.checkRun(opening, engine.snapshot(), engine.postings(), posted, gl.entries());
             EngineMetrics metrics = engine.metrics();
-            String failure = report.firstFailure()
-                    .map(InvariantResult::toString)
-                    .orElse(glCaughtUp ? "" : "general ledger did not catch up before the drain timeout");
+            String failure = firstFailure(report, glCaughtUp, settings.drainTimeout());
             return new ScenarioResult(
                     factory.name(),
                     threadMode.name(),
@@ -116,6 +116,23 @@ public final class ScenarioRunner {
             // Invariant: a delivery (background threads) is closed on every path, success or failure.
             delivery.ifPresent(GlDelivery::close);
         }
+    }
+
+    /**
+     * The first reason the row fails, or "" if it passed. A ledger invariant (money) comes first. If the
+     * general ledger has not caught up, GL_MATCHES_POSTINGS is not decided yet: its postings are still
+     * pending, not lost, so the row says that instead of "posting ... is missing".
+     */
+    private static String firstFailure(InvariantReport report, boolean glCaughtUp, Duration drainTimeout) {
+        if (glCaughtUp) {
+            return report.firstFailure().map(InvariantResult::toString).orElse("");
+        }
+        return report.results().stream()
+                .filter(r -> !r.passed() && r.invariant() != Invariant.GL_MATCHES_POSTINGS)
+                .findFirst()
+                .map(InvariantResult::toString)
+                .orElse("general ledger did not catch up before the drain timeout (" + drainTimeout.toSeconds()
+                        + " s); its postings were still pending, so GL_MATCHES_POSTINGS was not decided");
     }
 
     /** Closed loop: each client submits, waits for the answer, records the latency, repeats. */
