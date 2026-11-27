@@ -1,6 +1,6 @@
 # Settlement Lab · v1 spec (engine and tests)
 
-Spec for the separate public repo `settlement-lab` (local path `D:\Siddhesh\settlement-lab`).
+Spec for the separate open-source (MIT) repo `settlement-lab` (local path `D:\Siddhesh\settlement-lab`).
 Decided by ADR-0004 in the portfolio repo. A separate Claude session builds it from this file.
 v1 is a plain Java library plus a command-line runner. v2 wraps it in a Spring Boot API
 (built and tested, run locally only; V2-06 hosting was dropped on 2026-11-26), so **the engine never imports Spring**.
