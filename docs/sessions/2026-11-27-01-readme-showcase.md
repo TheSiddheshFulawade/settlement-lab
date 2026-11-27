@@ -1,0 +1,12 @@
+# 2026-11-27 · Session 1 · MIT licence, README showcase (offline)
+
+- **GitHub unreachable since 27 Nov 08:00 (Wi-Fi); push tonight.** Nothing counts as done until CI is green on GitHub.
+- **Push queue** (landing order; git-ops: push, PR, merge on the four green checks, then update the next branch from its new base, no force push; delete merged branches locally and on origin):
+  1. `docs/handoff-2026-11-26-02` · base main · `6b45da4` · release handoff · already pushed, no PR yet · CI: four checks green.
+  2. `chore/mit-licence` · base main · `ea46346` · LICENSE (MIT, "Copyright (c) 2026 Siddhesh Fulawade"), README "Open source (MIT)" + Licence section, SPEC.md line 3 · no code, no tests run · reviews: none needed · CI: four checks green. After merge, git-ops edits the v1.0.0 release notes: "public, no licence file yet" becomes "open source (MIT)".
+  3. `docs/readme-showcase` · stacked on `chore/mit-licence` · `24fbb86` + this handoff · new README top, 3 animated SVGs, 3 local badges, Mermaid modules, docs/DECISIONS.md · no code, so no `mvnw verify` (`-pl engine` runner smoke run: 12/12 PASS, 45 s) · reviews: technical + finance (fresh general-purpose agents), all findings fixed and re-confirmed, except the LLD PDF rebuild (nit) · CI: four checks green; then check on github.com that the SVGs animate, the badges and the Mermaid diagram render, and the DECISIONS anchors work.
+- **Rendering checked locally** (headless Chrome): each SVG paused at 2 to 5 frames, light and dark schemes, inside `<img>` on a white and a #0d1117 page at 2x, and with reduced motion. Not checked: Firefox and Safari, GitHub's camo proxy, Mermaid (no renderer offline), 100% zoom inside a real GitHub page.
+- **Deviations from the brief:** the heading is "Run it with one command", not "Run it in 2 minutes" (the reviewers marked a time heading UNSUPPORTED: 45 s was measured only with dependencies cached). The heading "What this proves" became "What is checked" (tests are not a formal proof). "16-core" became "16 logical processors" in the README and DECISIONS (the runner counts `availableProcessors`).
+- **Known, not fixed:** `docs/explainer/Settlement-Lab-LLD.pdf` still shows the old static SVGs, and `lld.src.html:504` says "the red one is a duplicate" (now amber). The fix is that caption plus `python docs/explainer/build-pdf.py`.
+- **Waiting on user:** delete the empty folders `.wt/fix-runner`, `.wt/v2-04` and `.wt/v3-07`; say "GitHub is back".
+- **Open TODO-ME:** unchanged. **Quiz:** none today (docs only, no new code).
