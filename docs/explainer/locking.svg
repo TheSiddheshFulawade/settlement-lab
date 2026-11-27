@@ -1,42 +1,99 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 360" width="940" height="360" role="img" aria-labelledby="t d">
-  <title id="t">Why ordered locking cannot deadlock</title>
-  <desc id="d">Two threads move money A to B and B to A at the same time. Locking the source account first can deadlock: each holds one lock and waits for the other. Locking the lower account id first makes both threads queue on A, so one finishes and then the other.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 470" width="960" height="470" role="img" aria-labelledby="t d">
+  <title id="t">Ordered locking and compare-and-set</title>
+  <desc id="d">Left: two transfers in opposite directions, A to B and B to A, each lock their source first and wait for each other forever, a deadlock; the code never does this. Middle: LockingLedger locks the lower account id first, so both transfers lock A first; the second waits, the first locks B, moves the money and unlocks, then the second runs. No wait cycle can form. Right: CasLedger keeps all balances in one immutable state in an AtomicReference. Both transfers read version 7 and build a new copy; the first compareAndSet succeeds, the second fails because the state changed, counts a conflict, re-reads version 8, re-checks funds and succeeds.</desc>
   <style>
-    .bg{fill:#0b1220}.panel{fill:#121c2e;stroke:#2a3a55;stroke-width:1.5}
-    .h{font:600 15px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#e6edf6}
-    .s{font:13px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#c3cfdf}
-    .k{font:600 13px ui-monospace,Consolas,"SFMono-Regular",monospace}
-    .t1{fill:#2dd4bf}.t2{fill:#a78bfa}.ok{fill:#4ade80}.bad{fill:#f87171}.mut{fill:#93a4bd}
-    .st{animation:show 10s infinite both}
-    .s2{animation-delay:0s}.s3{animation-name:show3}.s4{animation-name:show4}
-    @keyframes show{0%{opacity:.12}8%,100%{opacity:1}}
-    @keyframes show3{0%,30%{opacity:.12}38%,100%{opacity:1}}
-    @keyframes show4{0%,60%{opacity:.12}68%,100%{opacity:1}}
-    @media (prefers-reduced-motion:reduce){.st{animation:none}}
+    svg{--bg:#f6f8fa;--box:#fff;--line:#d0d7de;--ink:#1f2328;--mut:#59636e;--t1:#0f766e;--t2:#8250df;--ok:#1a7f37;--bad:#cf222e;--hi:#ddf4ff}
+    @media (prefers-color-scheme:dark){svg{--bg:#0d1117;--box:#161b22;--line:#3d444d;--ink:#e6edf3;--mut:#9198a1;--t1:#2dd4bf;--t2:#ab7df8;--ok:#3fb950;--bad:#f85149;--hi:#1f2d3d}}
+    text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;fill:var(--ink)}
+    .bg{fill:var(--bg);stroke:var(--line)}
+    .b{fill:var(--box);stroke:var(--line);stroke-width:1.5}
+    .h{font-size:13px;font-weight:600}.hl{font-size:16px;font-weight:600}
+    .s{font-size:11px;fill:var(--mut)}.st{font-size:11px}
+    .c{font-family:ui-monospace,SFMono-Regular,Consolas,Menlo,monospace;font-size:11px}
+    .ln{stroke:var(--mut);stroke-width:1.5;fill:none}.dash{stroke-dasharray:5 4}
+    .t1s{stroke:var(--t1)}.t2s{stroke:var(--t2)}.bads{stroke:var(--bad)}
+    .t1{fill:var(--t1)}.t2{fill:var(--t2)}.okf{fill:var(--ok)}.badf{fill:var(--bad)}
+    .hi{fill:var(--hi)}
+    .a{animation-duration:12s;animation-iteration-count:infinite;animation-timing-function:steps(1,end)}
+    .o{opacity:0}
+    .bar{animation-name:bar;animation-timing-function:ease-in-out}
+    @keyframes bar{0%,14%{transform:translateY(0)}17%,31%{transform:translateY(34px)}34%,48%{transform:translateY(68px)}51%,64%{transform:translateY(102px)}67%,81%{transform:translateY(136px)}84%,97%{transform:translateY(170px)}100%{transform:translateY(0)}}
+    .aT1{animation-name:aT1}@keyframes aT1{0%{opacity:1}50%,100%{opacity:0}}
+    .bT1{animation-name:bT1}@keyframes bT1{0%,33.3%{opacity:0}33.4%,50%{opacity:1}50.1%,100%{opacity:0}}
+    .w2{animation-name:w2}@keyframes w2{0%,16.6%{opacity:0}16.7%,66.6%{opacity:1}66.7%,100%{opacity:0}}
+    .xT2{animation-name:xT2}@keyframes xT2{0%,66.6%{opacity:0}66.7%,83.3%{opacity:1}83.4%,100%{opacity:0}}
+    .v7{animation-name:v7}@keyframes v7{0%,33.3%{opacity:1}33.4%,100%{opacity:0}}
+    .v8{animation-name:v8}@keyframes v8{0%,33.3%{opacity:0}33.4%,83.3%{opacity:1}83.4%,100%{opacity:0}}
+    .v9{animation-name:v9}@keyframes v9{0%,83.3%{opacity:0}83.4%,100%{opacity:1}}
+    .fl{animation-name:fl}@keyframes fl{0%,49.9%{opacity:0}50%,66.6%{opacity:1}66.7%,100%{opacity:0}}
+    .cy{animation:cy 4s ease-in-out infinite}@keyframes cy{0%,100%{opacity:1}50%{opacity:.35}}
+    @media (prefers-reduced-motion:reduce){.a,.cy{animation:none!important}.bar{transform:none}}
   </style>
-  <rect class="bg" width="940" height="360" rx="14"/>
-  <text class="h" x="24" y="34">Two transfers at the same instant: T1 moves A → B, T2 moves B → A</text>
+  <defs>
+    <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path fill="#8c959f" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="badf" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+  <rect class="bg" x="0.5" y="0.5" width="959" height="469" rx="12"/>
+  <text class="hl" x="20" y="32">Two transfers in opposite directions on the same two accounts</text>
+  <text class="s" x="20" y="52">T1 moves A to B, T2 moves B to A, at the same time. Account A has the lower id.</text>
 
-  <rect class="panel" x="20" y="54" width="440" height="286" rx="10"/>
-  <text class="h" x="40" y="84">Naive: lock the source account first</text>
-  <g class="st s2"><text class="k t1" x="40" y="124">T1</text><text class="s" x="72" y="124">locks A</text><text class="k t2" x="240" y="124">T2</text><text class="s" x="272" y="124">locks B</text></g>
-  <g class="st s3"><text class="k t1" x="40" y="164">T1</text><text class="s" x="72" y="164">holds A, waits for B …</text><text class="k t2" x="240" y="164">T2</text><text class="s" x="272" y="164">holds B, waits for A …</text></g>
-  <g class="st s4">
-    <rect x="40" y="190" width="400" height="56" rx="8" fill="#3a1518" stroke="#7f1d1d"/>
-    <text class="k bad" x="60" y="214">DEADLOCK</text><text class="s" x="60" y="234">Each waits for the other forever. Money stuck, threads stuck.</text>
+  <!-- panel 1: the problem -->
+  <rect class="b" x="20" y="70" width="290" height="380" rx="10"/>
+  <text class="h" x="36" y="94">Without a common order</text>
+  <text class="s" x="36" y="110">(what the code never does)</text>
+  <rect class="b" x="50" y="170" width="80" height="44" rx="6"/><text class="h" x="90" y="197" text-anchor="middle">A</text>
+  <rect class="b" x="200" y="170" width="80" height="44" rx="6"/><text class="h" x="240" y="197" text-anchor="middle">B</text>
+  <text class="h t1" x="90" y="146" text-anchor="middle">T1 holds A</text>
+  <text class="h t2" x="240" y="246" text-anchor="middle">T2 holds B</text>
+  <g class="cy">
+    <path class="ln bads dash" d="M130 180Q165 150 198 180" marker-end="url(#r)"/>
+    <path class="ln bads dash" d="M200 204Q165 234 132 204" marker-end="url(#r)"/>
   </g>
-  <text class="s mut" x="40" y="290">A cycle of waits: T1 → B (held by T2) → A (held by T1)</text>
-  <text class="s mut" x="40" y="312">This is how real payment systems freeze under load.</text>
+  <text class="s" x="165" y="146" text-anchor="middle">wants B</text>
+  <text class="s" x="165" y="246" text-anchor="middle">wants A</text>
+  <text class="st" x="36" y="290">T1 locks A, then waits for B.</text>
+  <text class="st" x="36" y="308">T2 locks B, then waits for A.</text>
+  <text class="st" x="36" y="326" style="fill:var(--bad)">Each waits for the other: deadlock.</text>
+  <text class="s" x="36" y="360">A deadlock needs a cycle of waits.</text>
+  <text class="s" x="36" y="376">The two ledgers on the right rule it out.</text>
 
-  <rect class="panel" x="480" y="54" width="440" height="286" rx="10" stroke="#1f5c4f"/>
-  <text class="h" x="500" y="84">Settlement Lab: lock the lower id first</text>
-  <g class="st s2"><text class="k t1" x="500" y="124">T1</text><text class="s" x="532" y="124">locks A</text><text class="k t2" x="700" y="124">T2</text><text class="s" x="732" y="124">wants A → waits,</text><text class="s" x="732" y="142">holding nothing</text></g>
-  <g class="st s3"><text class="k t1" x="500" y="174">T1</text><text class="s" x="532" y="174">locks B, moves money, releases both</text></g>
-  <g class="st s4">
-    <text class="k t2" x="500" y="206">T2</text><text class="s" x="532" y="206">locks A, then B, moves money</text>
-    <rect x="500" y="222" width="400" height="44" rx="8" fill="#0f2a24" stroke="#1f5c4f"/>
-    <text class="k ok" x="520" y="249">✓ BOTH DONE · balances correct</text>
-  </g>
-  <text class="s mut" x="500" y="290">Every thread asks for locks in the same order,</text>
-  <text class="s mut" x="500" y="312">so a cycle of waits is impossible. No timeout needed.</text>
+  <!-- panel 2: LockingLedger -->
+  <rect class="b" x="325" y="70" width="300" height="380" rx="10"/>
+  <text class="h" x="341" y="94">LockingLedger: lower id first</text>
+  <text class="s" x="341" y="110">one ReentrantLock per account</text>
+  <rect class="b" x="355" y="126" width="90" height="40" rx="6"/><text class="h" x="400" y="151" text-anchor="middle">A</text>
+  <rect class="b" x="505" y="126" width="90" height="40" rx="6"/><text class="h" x="550" y="151" text-anchor="middle">B</text>
+  <text class="s" x="400" y="184" text-anchor="middle">lock held by:</text>
+  <text class="s" x="550" y="184" text-anchor="middle">lock held by:</text>
+  <text class="a o aT1 h t1" x="400" y="200" text-anchor="middle">T1</text>
+  <text class="a o xT2 h t2" x="400" y="200" text-anchor="middle">T2</text>
+  <text class="a o bT1 h t1" x="550" y="200" text-anchor="middle">T1</text>
+  <text class="a o xT2 h t2" x="550" y="200" text-anchor="middle">T2</text>
+  <text class="a o w2 s t2" x="475" y="151" text-anchor="middle">T2 waits</text>
+  <rect class="a bar hi" x="333" y="214" width="284" height="32" rx="5"/>
+  <text class="st" x="341" y="228">1  T1 locks A, the lower id.</text>
+  <text class="st" x="341" y="262">2  T2 also wants A first: A is taken,</text><text class="st" x="355" y="276">so T2 waits. It holds nothing.</text>
+  <text class="st" x="341" y="296">3  T1 locks B, checks funds, debits A,</text><text class="st" x="355" y="310">credits B, records the posting.</text>
+  <text class="st" x="341" y="330">4  T1 unlocks B, then A.</text>
+  <text class="st" x="341" y="364">5  T2 locks A, then B; moves the money.</text>
+  <text class="st" x="341" y="398">6  T2 unlocks. A thread holding a lock only</text><text class="st" x="355" y="412">waits for a higher id: no cycle.</text>
+
+  <!-- panel 3: CasLedger -->
+  <rect class="b" x="640" y="70" width="300" height="380" rx="10"/>
+  <text class="h" x="656" y="94">CasLedger: compare-and-set, retry</text>
+  <text class="s" x="656" y="110">no locks; one immutable State of all balances</text>
+  <rect class="b" x="690" y="126" width="200" height="40" rx="6"/>
+  <text class="c" x="704" y="151">AtomicReference:</text>
+  <text class="a v7 h" x="850" y="151" text-anchor="middle">v7</text>
+  <text class="a o v8 h okf" x="850" y="151" text-anchor="middle">v8</text>
+  <text class="a o v9 h okf" x="850" y="151" text-anchor="middle">v9</text>
+  <text class="a o fl st badf" x="790" y="196" text-anchor="middle">T2's swap fails: conflicts + 1</text>
+  <rect class="a bar hi" x="648" y="214" width="284" height="32" rx="5"/>
+  <text class="st" x="656" y="228">1  T1 and T2 both read state v7.</text>
+  <text class="st" x="656" y="262">2  Each checks funds on v7, copies the</text><text class="st" x="670" y="276">balance array and applies its change.</text>
+  <text class="st" x="656" y="296">3  T1: compareAndSet(v7, its copy)</text><text class="st" x="670" y="310">succeeds. The state is now v8.</text>
+  <text class="st" x="656" y="330">4  T2: compareAndSet(v7, its copy) fails,</text><text class="st" x="670" y="344">because the state is no longer v7.</text>
+  <text class="st" x="656" y="364">5  T2 re-reads v8, re-checks funds,</text><text class="st" x="670" y="378">copies the array again.</text>
+  <text class="st" x="656" y="398">6  T2: compareAndSet(v8, its copy)</text><text class="st" x="670" y="412">succeeds. The state is now v9.</text>
+  <text class="s" x="656" y="438">Each copy is the whole table: 80 KB at 10,000 accounts.</text>
 </svg>
