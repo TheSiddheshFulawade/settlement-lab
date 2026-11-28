@@ -1,59 +1,129 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 370" width="940" height="370" role="img" aria-labelledby="t d">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 480" width="960" height="480" role="img" aria-labelledby="t d">
   <title id="t">One transfer through Settlement Lab</title>
-  <desc id="d">A transfer passes the idempotency store, the validator, a bounded queue and a worker, is posted to the ledger, then published to a general ledger through retry, a circuit breaker and an outbox. A duplicate is answered at the idempotency store and never applied twice.</desc>
+  <desc id="d">A transfer is claimed in the idempotency store, validated, offered to a bounded queue, taken by a worker and posted to the ledger; the caller is answered at once. A duplicate with the same id waits on the original's future and gets the same outcome without being queued or applied again. The posting is then published by a sender thread through a circuit breaker wrapping a retry to the general ledger, which is keyed by transfer id. A posting whose publish fails is kept in an in-memory outbox and a relay resends it, oldest first, until the general ledger accepts it.</desc>
   <style>
-    .bg{fill:#0b1220}.box{fill:#121c2e;stroke:#2a3a55;stroke-width:1.5}.hot{stroke:#2dd4bf}
-    .h{font:600 14px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#e6edf6}
-    .s{font:12px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#93a4bd}
-    .m{font:600 12px ui-monospace,Consolas,"SFMono-Regular",monospace}
-    .ok{fill:#4ade80}.warn{fill:#f59e0b}.bad{fill:#f87171}.teal{fill:#2dd4bf}
-    .ln{stroke:#3b4d6b;stroke-width:2;fill:none}.slot{fill:#1b2a42;stroke:#2a3a55}
-    .pulse{animation:pulse 3s ease-in-out infinite}
-    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
-    @media (prefers-reduced-motion:reduce){.anim{display:none}.pulse{animation:none}}
+    svg{--bg:#f6f8fa;--box:#fff;--line:#d0d7de;--ink:#1f2328;--mut:#59636e;--teal:#0f766e;--ok:#1a7f37;--bad:#cf222e;--warn:#9a6700;--vio:#8250df}
+    @media (prefers-color-scheme:dark){svg{--bg:#0d1117;--box:#161b22;--line:#3d444d;--ink:#e6edf3;--mut:#9198a1;--teal:#2dd4bf;--ok:#3fb950;--bad:#f85149;--warn:#d29922;--vio:#ab7df8}}
+    text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;fill:var(--ink)}
+    .bg{fill:var(--bg);stroke:var(--line)}
+    .b{fill:var(--box);stroke:var(--line);stroke-width:1.5}
+    .h{font-size:13px;font-weight:600}.hl{font-size:16px;font-weight:600}
+    .s{font-size:11px;fill:var(--mut)}
+    .c{font-family:ui-monospace,SFMono-Regular,Consolas,Menlo,monospace;font-size:10.5px;fill:var(--mut)}
+    .ln{stroke:var(--mut);stroke-width:1.5;fill:none}.dash{stroke-dasharray:5 4}
+    .ar{fill:var(--mut)}
+    .slot{fill:none;stroke:var(--line)}
+    .teal{fill:var(--teal)}.ok{fill:var(--ok)}.bad{fill:var(--bad)}.warn{fill:var(--warn)}.vio{fill:var(--vio)}
+    .a{opacity:0;animation-duration:16s;animation-iteration-count:infinite;animation-timing-function:ease-in-out}
+    .tk{animation-name:tk}.dp{animation-name:dp}.an{animation-name:an}.p1{animation-name:p1}.p2{animation-name:p2}
+    .l1{animation-name:l1}.l2{animation-name:l2}.l3{animation-name:l3}.l4{animation-name:l4}.l5{animation-name:l5}
+    @keyframes tk{0%{opacity:0;transform:translate(70px,132px)}2%{opacity:1;transform:translate(70px,132px)}8%{transform:translate(215px,136px)}14%{transform:translate(370px,136px)}20%,27%{transform:translate(500px,136px)}33%{transform:translate(685px,136px)}39%{opacity:1;transform:translate(855px,136px)}44%{opacity:0;transform:translate(855px,136px)}100%{opacity:0;transform:translate(855px,136px)}}
+    @keyframes dp{0%,9%{opacity:0;transform:translate(70px,162px)}11%{opacity:1;transform:translate(70px,162px)}16%,46%{opacity:1;transform:translate(215px,162px)}52%{opacity:1;transform:translate(70px,162px)}55%,100%{opacity:0;transform:translate(70px,162px)}}
+    @keyframes an{0%,39%{opacity:0;transform:translate(855px,124px)}40%{opacity:1;transform:translate(855px,124px)}42%{transform:translate(855px,84px)}48%{opacity:1;transform:translate(70px,84px)}50%{opacity:1;transform:translate(70px,124px)}53%,100%{opacity:0;transform:translate(70px,124px)}}
+    @keyframes p1{0%,42%{opacity:0;transform:translate(855px,172px)}44%{opacity:1;transform:translate(855px,172px)}49%{transform:translate(820px,318px)}54%{transform:translate(510px,318px)}60%{opacity:1;transform:translate(235px,318px)}64%,100%{opacity:0;transform:translate(235px,318px)}}
+    @keyframes p2{0%,63%{opacity:0;transform:translate(820px,318px)}65%{opacity:1;transform:translate(820px,318px)}69%,74%{transform:translate(510px,318px)}78%{transform:translate(820px,318px)}81%,85%{transform:translate(780px,410px)}91%{transform:translate(510px,318px)}96%{opacity:1;transform:translate(235px,318px)}99%,100%{opacity:0;transform:translate(235px,318px)}}
+    @keyframes l1{0%,15%{opacity:0}17%,50%{opacity:1}53%,100%{opacity:0}}
+    @keyframes l2{0%,38%{opacity:0}39%,47%{opacity:1}49%,100%{opacity:0}}
+    @keyframes l3{0%,58%{opacity:0}60%,64%{opacity:1}66%,100%{opacity:0}}
+    @keyframes l4{0%,68%{opacity:0}69%,76%{opacity:1}78%,100%{opacity:0}}
+    @keyframes l5{0%,94%{opacity:0}96%,99%{opacity:1}100%{opacity:0}}
+    @media (prefers-reduced-motion:reduce){.a{animation:none!important;opacity:0!important}}
   </style>
-  <defs>
-    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#3b4d6b"/></marker>
-  </defs>
-  <rect class="bg" width="940" height="370" rx="14"/>
-  <text class="h" x="24" y="34">One transfer through Settlement Lab</text>
-  <text class="s" x="24" y="54">id · from account · to account · amount (in paise, a long, never a double)</text>
+  <defs><marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ar" d="M0 0L10 5L0 10z"/></marker></defs>
+  <rect class="bg" x="0.5" y="0.5" width="959" height="479" rx="12"/>
+  <text class="hl" x="20" y="32">One transfer, end to end</text>
+  <text class="s" x="20" y="52">SettlementEngine.submit, then the worker, then OutboxPublisher. Values: RunnerSettings.defaults; 16 senders is the OutboxPublisher default.</text>
 
-  <!-- row 1 -->
-  <path class="ln" d="M140 105H170M295 105H325M445 105H480M600 105H635M755 105H790" marker-end="url(#a)"/>
-  <rect class="box" x="20" y="80" width="120" height="50" rx="8"/><text class="h" x="80" y="110" text-anchor="middle">Client</text>
-  <rect class="box hot" x="172" y="80" width="123" height="50" rx="8"/><text class="h" x="233" y="102" text-anchor="middle">Idempotency</text><text class="s" x="233" y="120" text-anchor="middle">seen this id?</text>
-  <rect class="box" x="327" y="80" width="118" height="50" rx="8"/><text class="h" x="386" y="102" text-anchor="middle">Validator</text><text class="s" x="386" y="120" text-anchor="middle">amount, accounts</text>
-  <rect class="box" x="482" y="80" width="118" height="50" rx="8"/><text class="h" x="541" y="99" text-anchor="middle">Bounded queue</text>
-  <rect class="slot" x="497" y="108" width="14" height="12" rx="2"/><rect class="slot" x="515" y="108" width="14" height="12" rx="2"/><rect class="slot" x="533" y="108" width="14" height="12" rx="2"/><rect class="slot" x="551" y="108" width="14" height="12" rx="2"/><rect class="slot" x="569" y="108" width="14" height="12" rx="2"/>
-  <rect class="box" x="637" y="80" width="118" height="50" rx="8"/><text class="h" x="696" y="102" text-anchor="middle">Workers × 8</text><text class="s" x="696" y="120" text-anchor="middle">platform | virtual</text>
-  <rect class="box hot" x="792" y="80" width="128" height="50" rx="8"/><text class="h" x="856" y="102" text-anchor="middle">Ledger</text><text class="s" x="856" y="120" text-anchor="middle">debit + credit, atomic</text>
+  <!-- answer path: the caller does not wait for the general ledger -->
+  <path class="ln dash" d="M855 100V84H70V100" marker-end="url(#m)"/>
+  <text class="s" x="462" y="78" text-anchor="middle">caller's future completes here: the answer does not wait for the general ledger</text>
 
-  <text class="m bad" x="233" y="152" text-anchor="middle">duplicate → same answer</text>
-  <text class="m warn" x="386" y="152" text-anchor="middle">bad → 400</text>
-  <text class="m warn" x="541" y="152" text-anchor="middle">full → 503, retry</text>
-  <text class="m ok" x="856" y="152" text-anchor="middle">POSTED → 201</text>
-  <text class="m warn" x="856" y="168" text-anchor="middle">no funds → 422</text>
+  <!-- row 1: submit and worker -->
+  <rect class="b" x="20" y="100" width="100" height="72" rx="8"/>
+  <text class="h" x="70" y="122" text-anchor="middle">Caller</text>
+  <text class="s" x="70" y="150" text-anchor="middle">submit(transfer)</text>
 
-  <!-- row 2 -->
-  <path class="ln" d="M856 176V230" marker-end="url(#a)"/>
-  <path class="ln" d="M780 255H720M545 255H500" marker-end="url(#a)"/>
-  <rect class="box" x="782" y="230" width="140" height="50" rx="8"/><text class="h" x="852" y="252" text-anchor="middle">Outbox</text><text class="s" x="852" y="270" text-anchor="middle">never loses a posting</text>
-  <rect class="box" x="547" y="230" width="173" height="50" rx="8"/><text class="h" x="633" y="252" text-anchor="middle">Retry + circuit breaker</text><text class="s" x="633" y="270" text-anchor="middle">Resilience4j</text>
-  <rect class="box" x="327" y="230" width="173" height="50" rx="8" stroke-dasharray="5 4"/><text class="h" x="413" y="252" text-anchor="middle">General ledger (fake)</text><text class="s" x="413" y="270" text-anchor="middle">injected: slow · errors · outage</text>
-  <text class="s" x="24" y="246">The caller gets its answer as soon as</text>
-  <text class="s" x="24" y="263">the ledger posts. Publishing to the GL</text>
-  <text class="s" x="24" y="280">happens after, and is retried until it lands.</text>
+  <rect class="b" x="140" y="100" width="150" height="72" rx="8"/>
+  <text class="h" x="215" y="120" text-anchor="middle">1 Idempotency store</text>
+  <text class="c" x="215" y="148" text-anchor="middle">putIfAbsent(id, future)</text>
 
-  <!-- invariants -->
-  <rect x="20" y="306" width="900" height="44" rx="8" fill="#0f2a24" stroke="#1f5c4f"/>
-  <text class="m ok pulse" x="40" y="333">✓ total money never changes   ✓ each transfer posted exactly once   ✓ no balance below zero   ✓ GL = ledger</text>
+  <rect class="b" x="310" y="100" width="120" height="72" rx="8"/>
+  <text class="h" x="370" y="120" text-anchor="middle">2 Validator</text>
+  <text class="s" x="370" y="152" text-anchor="middle">bad amount or account:</text>
+  <text class="c" x="370" y="165" text-anchor="middle">REJECTED_INVALID</text>
 
-  <!-- moving transfers -->
-  <g class="anim">
-    <circle r="7" class="teal"><animateMotion dur="6s" repeatCount="indefinite" path="M80 105H856V255H413" keyPoints="0;0.62;1;1" keyTimes="0;0.55;0.9;1" calcMode="linear"/></circle>
-    <circle r="7" class="teal" opacity=".85"><animateMotion dur="6s" begin="2s" repeatCount="indefinite" path="M80 105H856V255H413" keyPoints="0;0.62;1;1" keyTimes="0;0.55;0.9;1" calcMode="linear"/></circle>
-    <circle r="7" class="teal" opacity=".7"><animateMotion dur="6s" begin="4s" repeatCount="indefinite" path="M80 105H856V255H413" keyPoints="0;0.62;1;1" keyTimes="0;0.55;0.9;1" calcMode="linear"/></circle>
-    <circle r="7" class="bad"><animateMotion dur="3s" begin="1s" repeatCount="indefinite" path="M80 105H233H80" calcMode="linear"/></circle>
-  </g>
+  <rect class="b" x="450" y="100" width="150" height="72" rx="8"/>
+  <text class="h" x="525" y="120" text-anchor="middle">3 Bounded queue</text>
+  <rect class="slot" x="490" y="128" width="20" height="16" rx="3"/><rect class="slot" x="514" y="128" width="20" height="16" rx="3"/><rect class="slot" x="538" y="128" width="20" height="16" rx="3"/><rect class="slot" x="562" y="128" width="20" height="16" rx="3"/>
+  <text class="s" x="525" y="156" text-anchor="middle">capacity 1,024; full for 100 ms:</text>
+  <text class="c" x="525" y="167" text-anchor="middle">QUEUE_FULL, id released</text>
+
+  <rect class="b" x="620" y="100" width="130" height="72" rx="8"/>
+  <text class="h" x="685" y="120" text-anchor="middle">4 Workers</text>
+  <text class="s" x="685" y="152" text-anchor="middle">N = max(4, 2 × cores)</text>
+  <text class="s" x="685" y="165" text-anchor="middle">platform or virtual</text>
+
+  <rect class="b" x="770" y="100" width="170" height="72" rx="8"/>
+  <text class="h" x="855" y="120" text-anchor="middle">5 Ledger</text>
+  <text class="c" x="855" y="152" text-anchor="middle">applyWithResult</text>
+  <text class="c" x="855" y="165" text-anchor="middle">POSTED / REJECTED_FUNDS</text>
+
+  <path class="ln" d="M120 136H138" marker-end="url(#m)"/><path class="ln" d="M290 136H308" marker-end="url(#m)"/>
+  <path class="ln" d="M430 136H448" marker-end="url(#m)"/><path class="ln" d="M600 136H618" marker-end="url(#m)"/>
+  <path class="ln" d="M750 136H768" marker-end="url(#m)"/>
+
+  <!-- row 2: publishing, off the worker's path -->
+  <path class="ln" d="M855 172V280" marker-end="url(#m)"/>
+  <text class="s" x="862" y="232">posting</text>
+  <rect class="b" x="700" y="282" width="240" height="72" rx="8"/>
+  <text class="h" x="820" y="302" text-anchor="middle">6 publish(posting)</text>
+  <text class="s" x="820" y="322" text-anchor="middle">returns at once; a sender virtual</text>
+  <text class="s" x="820" y="336" text-anchor="middle">thread (at most 16) tries the GL</text>
+
+  <rect class="b" x="400" y="276" width="220" height="84" rx="8"/>
+  <text class="h" x="510" y="294" text-anchor="middle">Circuit breaker</text>
+  <rect class="b" x="418" y="302" width="184" height="48" rx="6"/>
+  <text class="h" x="510" y="320" text-anchor="middle">Retry, 3 attempts</text>
+  <text class="s" x="510" y="337" text-anchor="middle">back-off 50 ms ×2, 50 % jitter</text>
+
+  <rect class="b" x="140" y="282" width="190" height="72" rx="8"/>
+  <text class="h" x="235" y="302" text-anchor="middle">General ledger (fake)</text>
+  <text class="s" x="235" y="322" text-anchor="middle">keyed by transfer id;</text>
+  <text class="s" x="235" y="336" text-anchor="middle">a repeat: ALREADY_RECORDED</text>
+
+  <path class="ln" d="M700 318H622" marker-end="url(#m)"/><path class="ln" d="M400 318H332" marker-end="url(#m)"/>
+
+  <rect class="b" x="700" y="382" width="240" height="66" rx="8"/>
+  <text class="h" x="820" y="400" text-anchor="middle">Outbox (in memory)</text>
+  <rect class="slot" x="790" y="408" width="20" height="16" rx="3"/><rect class="slot" x="814" y="408" width="20" height="16" rx="3"/><rect class="slot" x="838" y="408" width="20" height="16" rx="3"/>
+  <text class="s" x="820" y="440" text-anchor="middle">kept until the GL takes it</text>
+  <path class="ln" d="M880 354V380" marker-end="url(#m)"/>
+  <text class="s" x="888" y="372">failed</text>
+  <path class="ln dash" d="M700 432H560V362" marker-end="url(#m)"/>
+  <text class="s" x="568" y="396">relay: oldest first;</text>
+  <text class="s" x="568" y="410">after a failure,</text>
+  <text class="s" x="568" y="424">again in 20 ms</text>
+
+  <!-- legend -->
+  <circle class="teal" cx="30" cy="398" r="6"/><text class="s" x="42" y="402">transfer t-41</text>
+  <circle class="warn" cx="140" cy="398" r="6"/><text class="s" x="152" y="402">same t-41 sent again</text>
+  <circle class="ok" cx="290" cy="398" r="6"/><text class="s" x="302" y="402">answer</text>
+  <circle class="vio" cx="360" cy="398" r="6"/><text class="s" x="372" y="402">posting</text>
+  <text class="s" x="20" y="430">Timing is illustrative, not to scale. Delivery is at least once; the GL records each transfer id once.</text>
+  <text class="s" x="20" y="446">The v1 outbox lives in memory: it survives a GL outage, not a process restart.</text>
+
+  <!-- moving parts (hidden when motion is reduced) -->
+  <g class="a dp"><circle class="warn" r="7"/></g>
+  <g class="a tk"><circle class="teal" r="8"/></g>
+  <g class="a an"><circle class="ok" r="6"/></g>
+  <g class="a p1"><circle class="vio" r="7"/></g>
+  <g class="a p2"><circle class="vio" r="7"/></g>
+  <text class="a l1 s" x="215" y="196" text-anchor="middle">same id: waits on the original's future;</text>
+  <text class="a l1 s" x="215" y="210" text-anchor="middle">never queued, never applied twice</text>
+  <text class="a l2 h" x="855" y="196" text-anchor="middle" style="fill:var(--ok)">POSTED</text>
+  <text class="a l2 s" x="215" y="226" text-anchor="middle" style="fill:var(--ok)">both callers get POSTED; applied once</text>
+  <text class="a l3 s" x="235" y="376" text-anchor="middle" style="fill:var(--ok)">recorded</text>
+  <text class="a l4 s" x="480" y="376" text-anchor="middle" style="fill:var(--bad)">a later posting, GL failing:</text>
+  <text class="a l4 s" x="480" y="390" text-anchor="middle" style="fill:var(--bad)">error on all 3 attempts</text>
+  <text class="a l5 s" x="235" y="376" text-anchor="middle" style="fill:var(--ok)">recorded (relay)</text>
 </svg>

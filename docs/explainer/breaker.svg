@@ -1,39 +1,74 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 324" width="940" height="324" role="img" aria-labelledby="t d">
-  <title id="t">Circuit breaker around the general ledger</title>
-  <desc id="d">The breaker is closed while calls succeed. When half of the last 20 calls fail it opens and fails fast for 2 seconds. Then it lets a trial call through: success closes it, failure opens it again. Postings that fail wait in the outbox and are resent.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 450" width="960" height="450" role="img" aria-labelledby="t d">
+  <title id="t">Circuit breaker and outbox during a general-ledger outage</title>
+  <desc id="d">While the general ledger is up the breaker is closed and postings go straight to it. When the general ledger goes down, each publish is tried three times and the posting goes to the outbox. Once at least half of the last 20 calls have failed, the breaker opens: for 2 seconds calls fail at once without reaching the general ledger, and every posting waits in the outbox, which fills. After the wait the breaker is half-open and lets 3 trial calls through; the general ledger is back, so they pass and the breaker closes. The relay then sends the outbox, oldest first, until it is empty. The outbox size is illustrative.</desc>
   <style>
-    .bg{fill:#0b1220}
-    .h{font:600 15px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#e6edf6}
-    .s{font:12.5px "Segoe UI",-apple-system,Helvetica,Arial,sans-serif;fill:#c3cfdf}
-    .k{font:700 14px ui-monospace,Consolas,"SFMono-Regular",monospace;fill:#0b1220}
-    .ln{stroke:#3b4d6b;stroke-width:2;fill:none}
-    .ring{fill:none;stroke-width:6;opacity:.15;animation:glow 9s infinite}
-    .r2{animation-delay:3s}.r3{animation-delay:6s}
-    @keyframes glow{0%,33%{opacity:1}34%,100%{opacity:.15}}
-    @media (prefers-reduced-motion:reduce){.ring{animation:none;opacity:.6}}
+    svg{--bg:#f6f8fa;--box:#fff;--line:#d0d7de;--ink:#1f2328;--mut:#59636e;--ok:#1a7f37;--bad:#cf222e;--warn:#9a6700;--vio:#8250df;--trk:#eaeef2}
+    @media (prefers-color-scheme:dark){svg{--bg:#0d1117;--box:#161b22;--line:#3d444d;--ink:#e6edf3;--mut:#9198a1;--ok:#3fb950;--bad:#f85149;--warn:#d29922;--vio:#ab7df8;--trk:#21262d}}
+    text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;fill:var(--ink)}
+    .bg{fill:var(--bg);stroke:var(--line)}
+    .h{font-size:13px;font-weight:600}.hl{font-size:16px;font-weight:600}
+    .s{font-size:11px;fill:var(--mut)}.st{font-size:12px}
+    .k{font-size:13px;font-weight:700}
+    .ln{stroke:var(--mut);stroke-width:1.5;fill:none}
+    .okf{fill:var(--ok)}.badf{fill:var(--bad)}.warnf{fill:var(--warn)}.viof{fill:var(--vio)}
+    .st0{fill:var(--box);stroke-width:2.5}
+    .ring{fill:none;stroke-width:6}
+    .trk{fill:var(--trk);stroke:var(--line)}
+    .a{animation-duration:16s;animation-iteration-count:infinite;animation-timing-function:steps(1,end)}
+    .o{opacity:0}
+    .rC{animation-name:rC}@keyframes rC{0%{opacity:1}31.25%,65.6%{opacity:0}65.7%,100%{opacity:1}}
+    .rO{animation-name:rO}@keyframes rO{0%,31.2%{opacity:0}31.25%,56.2%{opacity:1}56.25%,100%{opacity:0}}
+    .rH{animation-name:rH}@keyframes rH{0%,56.2%{opacity:0}56.25%,65.6%{opacity:1}65.7%,100%{opacity:0}}
+    .gU{animation-name:gU}@keyframes gU{0%{opacity:1}18.75%,49.9%{opacity:0}50%,100%{opacity:1}}
+    .gD{animation-name:gD}@keyframes gD{0%,18.7%{opacity:0}18.75%,49.9%{opacity:1}50%,100%{opacity:0}}
+    .c1{animation-name:c1}@keyframes c1{0%{opacity:1}18.75%,100%{opacity:0}}
+    .c2{animation-name:c2}@keyframes c2{0%,18.7%{opacity:0}18.75%,31.2%{opacity:1}31.25%,100%{opacity:0}}
+    .c3{animation-name:c3}@keyframes c3{0%,31.2%{opacity:0}31.25%,56.2%{opacity:1}56.25%,100%{opacity:0}}
+    .c4{animation-name:c4}@keyframes c4{0%,56.2%{opacity:0}56.25%,65.6%{opacity:1}65.7%,100%{opacity:0}}
+    .c5{animation-name:c5}@keyframes c5{0%,65.6%{opacity:0}65.7%,100%{opacity:1}}
+    .fill{transform-box:fill-box;transform-origin:left center;transform:scaleX(0);animation-name:fill;animation-timing-function:linear}
+    @keyframes fill{0%,18.75%{transform:scaleX(0)}31.25%{transform:scaleX(.12)}56.25%{transform:scaleX(.9)}65.6%{transform:scaleX(.93)}93%,100%{transform:scaleX(0)}}
+    @media (prefers-reduced-motion:reduce){.a{animation:none!important}.fill{transform:scaleX(0)}}
   </style>
-  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#3b4d6b"/></marker></defs>
-  <rect class="bg" width="940" height="324" rx="14"/>
-  <text class="h" x="24" y="34">When the general ledger is down: fail fast, keep the posting, resend later</text>
+  <defs><marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path fill="#8c959f" d="M0 0L10 5L0 10z"/></marker></defs>
+  <rect class="bg" x="0.5" y="0.5" width="959" height="449" rx="12"/>
+  <text class="hl" x="20" y="32">When the general ledger is down: fail fast, keep every posting, resend later</text>
+  <text class="s" x="20" y="52">ResilientPublisher (a retry inside a circuit breaker) in front of the GL, and the OutboxPublisher's outbox behind it. Defaults from ResilienceConfig.</text>
 
-  <circle class="ring" cx="150" cy="140" r="58" stroke="#4ade80"/>
-  <circle cx="150" cy="140" r="46" fill="#4ade80"/><text class="k" x="150" y="145" text-anchor="middle">CLOSED</text>
-  <circle class="ring r2" cx="470" cy="140" r="58" stroke="#f87171"/>
-  <circle cx="470" cy="140" r="46" fill="#f87171"/><text class="k" x="470" y="145" text-anchor="middle">OPEN</text>
-  <circle class="ring r3" cx="790" cy="140" r="58" stroke="#f59e0b"/>
-  <circle cx="790" cy="140" r="46" fill="#f59e0b"/><text class="k" x="790" y="145" text-anchor="middle">HALF-OPEN</text>
+  <!-- states -->
+  <circle class="a ring rC" cx="170" cy="128" r="52" style="stroke:var(--ok)"/>
+  <circle class="a o ring rO" cx="480" cy="128" r="52" style="stroke:var(--bad)"/>
+  <circle class="a o ring rH" cx="790" cy="128" r="52" style="stroke:var(--warn)"/>
+  <circle class="st0" cx="170" cy="128" r="44" style="stroke:var(--ok)"/><text class="k okf" x="170" y="133" text-anchor="middle">CLOSED</text>
+  <circle class="st0" cx="480" cy="128" r="44" style="stroke:var(--bad)"/><text class="k badf" x="480" y="133" text-anchor="middle">OPEN</text>
+  <circle class="st0" cx="790" cy="128" r="44" style="stroke:var(--warn)"/><text class="k warnf" x="790" y="133" text-anchor="middle">HALF-OPEN</text>
+  <path class="ln" d="M222 112Q325 72 428 112" marker-end="url(#m)"/>
+  <text class="s" x="325" y="76" text-anchor="middle">≥ 50 % of the last 20 calls failed</text>
+  <path class="ln" d="M532 112Q635 72 738 112" marker-end="url(#m)"/>
+  <text class="s" x="635" y="76" text-anchor="middle">after the 2 s wait</text>
+  <path class="ln" d="M738 146Q635 186 532 146" marker-end="url(#m)"/>
+  <text class="s" x="635" y="186" text-anchor="middle">2 or 3 of the 3 trials fail</text>
+  <path class="ln" d="M770 168Q480 262 190 168" marker-end="url(#m)"/>
+  <text class="s" x="480" y="230" text-anchor="middle">at most 1 of the 3 trials fails</text>
 
-  <path class="ln" d="M205 122Q310 85 415 122" marker-end="url(#a)"/>
-  <text class="s" x="310" y="84" text-anchor="middle">≥ 50 % of last 20 calls fail</text>
-  <path class="ln" d="M525 122Q630 85 735 122" marker-end="url(#a)"/>
-  <text class="s" x="630" y="84" text-anchor="middle">wait 2 s</text>
-  <path class="ln" d="M735 160Q630 195 525 160" marker-end="url(#a)"/>
-  <text class="s" x="630" y="207" text-anchor="middle">trial call fails</text>
-  <path class="ln" d="M770 192Q470 318 170 194" marker-end="url(#a)"/>
-  <text class="s" x="470" y="262" text-anchor="middle">trial call succeeds</text>
+  <!-- general ledger and outbox over time -->
+  <text class="h" x="20" y="272">General ledger</text>
+  <text class="a gU st okf" x="170" y="272">up</text>
+  <text class="a o gD st badf" x="170" y="272">down: every call fails (outage)</text>
+  <text class="h" x="20" y="302">Outbox</text>
+  <text class="s" x="20" y="316">illustrative size</text>
+  <rect class="trk" x="170" y="290" width="720" height="18" rx="4"/>
+  <rect class="a fill viof" x="170" y="290" width="720" height="18" rx="4"/>
 
-  <text class="s" x="150" y="222" text-anchor="middle">calls go through;</text>
-  <text class="s" x="150" y="238" text-anchor="middle">retry 3× with jitter</text>
-  <text class="s" x="24" y="296">Open = no calls for 2 s, so a sick GL is not hammered. The posting waits in the outbox; the GL is keyed by transfer id,</text>
-  <text class="s" x="24" y="313">so a resend is harmless. At-least-once delivery + idempotent receiver = exactly-once effect.</text>
+  <!-- what is happening now -->
+  <text class="a c1 st" x="20" y="352">CLOSED, GL up: each posting goes from a sender thread straight to the GL.</text>
+  <text class="a o c2 st" x="20" y="352">GL down, breaker still CLOSED: each publish is tried 3 times with back-off; then the posting goes to the outbox.</text>
+  <text class="a o c3 st" x="20" y="352">OPEN for 2 s: calls fail at once (CIRCUIT_OPEN) without reaching the GL, and every posting waits in the outbox.</text>
+  <text class="a o c4 st" x="20" y="352">HALF-OPEN: the next 3 calls are trials. The GL is back, so they pass.</text>
+  <text class="a o c5 st" x="20" y="352">CLOSED again: new postings go straight to the GL; the relay sends the outbox, oldest first, until it is empty.</text>
+
+  <text class="s" x="20" y="388">A call is one publish, its retries included. The breaker can open only after at least 10 calls. Times here are not to scale.</text>
+  <text class="s" x="20" y="406">The GL is keyed by transfer id, so a resend it already holds is answered ALREADY_RECORDED, and arrival order does not matter.</text>
+  <text class="s" x="20" y="424">Measured OUTAGE cells (GL down from 50 ms for 1 s; results.json): the breaker opened once per cell; the outbox peaked at 86,480 to 95,181</text>
+  <text class="s" x="20" y="440">postings, most of each cell's postings; every cell ended with the GL holding exactly the ledger's postings.</text>
 </svg>
