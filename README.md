@@ -7,7 +7,7 @@ strategies (ordered locking and lock-free compare-and-set) and two threading mod
 
 [![Licence: MIT](docs/badges/licence-mit.svg)](LICENSE)
 [![Java 21 and 25 in CI](docs/badges/java-21-25.svg)](.github/workflows)
-[![Release v1.0.0](docs/badges/release-v1.0.0.svg)](https://github.com/TheSiddheshFulawade/settlement-lab/releases/tag/v1.0.0)
+[![Release v1.0.1](docs/badges/release-v1.0.1.svg)](https://github.com/TheSiddheshFulawade/settlement-lab/releases/tag/v1.0.1)
 
 Open source (MIT). Nothing is hosted: you run it on your own machine. Write-up:
 https://siddheshfulawade.com/projects/settlement-lab
@@ -265,7 +265,7 @@ is open, so no working command is printed here yet.
 
 ## Run it locally
 
-Nothing is hosted: you clone the repository (or release v1.0.0) and run everything on your own machine.
+Nothing is hosted: you clone the repository (or download release v1.0.1) and run everything on your own machine.
 Needs JDK 21 or newer (25 recommended) Git, and `curl` for steps 4 and 5 (it ships with Git
 for Windows and with Windows 10 and later); nothing else. On Windows, run them in
 Git Bash (`./mvnw` works there; `mvnw.cmd` too). Every command below was run on 2026-11-26 on an
