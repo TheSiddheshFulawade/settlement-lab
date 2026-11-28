@@ -11,6 +11,7 @@ tested in CI on Linux, not wired into the API, and not measured yet (see Databas
 [SPEC.md](SPEC.md) has the requirements (REQ-LAB-001 to 016, REQ-API-001 to 010, REQ-RUN-001 to 013),
 the design and the task lists. The HTTP contract of the runs API is in
 [docs/api-contract.md](docs/api-contract.md).
+Open source (MIT): see [LICENSE](LICENSE).
 
 ## Problem
 
@@ -657,3 +658,7 @@ ledger is v3 and stays a local and CI experiment.
   correctness test (`DbScenarioRunTest`, tiny cells) runs in CI and the measurement runs locally with the
   machine written next to the numbers. The cost: the database numbers are one run on one machine, with no
   warm-up pass, and are not reproducible by a reader without Docker.
+
+## Licence
+
+Open source under the MIT licence: see [LICENSE](LICENSE). Copyright (c) 2026 Siddhesh Fulawade.
