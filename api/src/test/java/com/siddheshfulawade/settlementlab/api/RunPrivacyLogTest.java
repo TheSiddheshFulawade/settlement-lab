@@ -3,10 +3,13 @@ package com.siddheshfulawade.settlementlab.api;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.logging.LogLevel;
+import org.springframework.boot.logging.LoggingSystem;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -14,12 +17,17 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 
 /**
  * REQ-RUN-006: client IPs are never logged. Logging is turned up to DEBUG for the whole application and
  * everything written to the console is searched for the addresses used by an accepted, a refused (429)
  * and an invalid request.
+ *
+ * <p>The log level is global to the test JVM, and Spring reuses cached contexts without re-reading it.
+ * So this class puts the root level back after it runs and drops its context: otherwise every later
+ * class logs at DEBUG (a test that forbids a logged path then fails, and heavy HTTP tests stall).
  */
 @SpringBootTest(
         properties = {
@@ -32,7 +40,15 @@ import org.springframework.test.web.servlet.assertj.MockMvcTester;
 @AutoConfigureMockMvc
 @Import(FakeClockConfig.class)
 @ExtendWith(OutputCaptureExtension.class)
+@DirtiesContext
 class RunPrivacyLogTest {
+
+    /** Invariant: no later test class inherits this class's DEBUG root level. INFO is Spring Boot's default. */
+    @AfterAll
+    static void restoreRootLogLevel() {
+        LoggingSystem.get(RunPrivacyLogTest.class.getClassLoader())
+                .setLogLevel(LoggingSystem.ROOT_LOGGER_NAME, LogLevel.INFO);
+    }
 
     private static final String FORGED_FIRST = "203.0.113.5";
     private static final String CLIENT = "198.51.100.77";
